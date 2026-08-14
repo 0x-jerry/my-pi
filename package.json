@@ -1,0 +1,24 @@
+{
+  "name": "my-pi",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0x-jerry/my-pi.git"
+  },
+  "keywords": [],
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ]
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/0x-jerry/my-pi/issues"
+  },
+  "homepage": "https://github.com/0x-jerry/my-pi#readme"
+}
