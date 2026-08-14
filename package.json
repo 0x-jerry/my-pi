@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "check": "bun run --cwd packages/shared check && bun run --cwd packages/agent check && bun run --cwd packages/core check",
-    "test": "bun run --cwd packages/shared test && bun run --cwd packages/agent test && bun run --cwd packages/core test",
+    "check": "bun run --cwd packages/shared check && bun run --cwd packages/agent check && bun run --cwd packages/core check && bun run --cwd packages/app check",
+    "test": "bun run --cwd packages/shared test && bun run --cwd packages/agent test && bun run --cwd packages/core test && bun run --cwd packages/app test",
     "dev": "bun run --cwd packages/app dev"
   },
   "repository": {

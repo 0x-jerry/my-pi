@@ -16,5 +16,5 @@
     "noFallthroughCasesInSwitch": true,
     "moduleResolution": "bundler",
   },
-  "include": ["src", "env.d.ts"],
+  "include": ["src", "test", "env.d.ts"],
 }
