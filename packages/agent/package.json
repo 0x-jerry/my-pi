@@ -1,0 +1,22 @@
+{
+	"name": "@my-pi/agent",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "Thin wrapper around the pi SDK: one PiAgent = one pi AgentSession",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@earendil-works/pi-agent-core": "0.84.1",
+		"@earendil-works/pi-ai": "0.84.1",
+		"@earendil-works/pi-coding-agent": "0.84.1",
+		"@my-pi/shared": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.14",
+		"typescript": "^5.9.2"
+	}
+}

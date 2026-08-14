@@ -1,0 +1,16 @@
+{
+	"name": "@my-pi/shared",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "Shared types and protocol helpers (DTOs, events, JSON-RPC 2.0)",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.14",
+		"typescript": "^5.9.2"
+	}
+}

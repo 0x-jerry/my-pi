@@ -367,3 +367,158 @@ Effort: S ≤0.5d, M ≤1d, L ≤2d.
 - Full OAuth login flows in-app; multi-user sync; telemetry.
 - App signing/packaging beyond existing electrobun build scripts.
 - Editing message history / manual transcript edits.
+
+## 8. Implementation status
+
+**Done (agent + core + shared):**
+
+| Package | Contents | Verified |
+|---|---|---|
+| `packages/shared` (`@my-pi/shared`) | JSON-RPC 2.0 protocol types/helpers (`parseRpcMessage`, error codes, builders, `RpcMethod`/`RpcEvent`), DTOs (Workspace, SessionInfo, StoredMessage, MessageRecord, TokenUsageRow, PluginInfo, Model/ProviderInfo…), PiAgentEvent/CoreEvent/InternalEvent unions | 12 unit tests |
+| `packages/agent` (`@my-pi/agent`) | `PiAgent` (createAgentSession wrapper: in-memory SessionManager, compaction off, message restore), `ModelService` (ModelRuntime wrapper: providers/available/auth/api-key login), `buildResourceLoader` (noExtensions + app-managed plugin paths), pure event mapper + serializer (testable without a model), re-exports pi types | 13 unit tests incl. real plugin-file load through pi's loader |
+| `packages/core` (`@my-pi/core`) | sqlite layer (WAL, user_version migrations, no FK enforcement; repos for workspaces/sessions/messages/token_usage/plugins/settings), services (workspace/session incl. fork+resume/settings/plugin registry w/ builtin example), AgentPool (lazy load, resume, status transitions), PersistenceWriter (idempotent suffix-diff, token ledger, rollups, run_end/message_end events), TranscriptReader, JsonRpcServer (`Bun.serve` ws, origin/token check, notifications, -32601/-32700 errors), `registerRpcMethods`, `CoreApp` (create/dispose, broadcaster w/ 50ms delta coalescing, orchestration: removeWorkspace/deleteSession/fork/sendMessage) | 31 unit tests; E2E smoke scripts `scripts/smoke.ts` (RPC round-trip) + `scripts/agent-smoke.ts` (real model run: prompt→events→persistence→ledger) |
+
+Key bug caught by the E2E smoke: `CoreApp` field-initialized a second `EventBus` that shadowed the one wired to services — the broadcaster/listeners would have silently missed all events. Fixed (bus now injected via deps).
+
+**Done: pi credentials in sqlite (§9).** `SqliteCredentialStore` (`packages/core/src/db/credential-store.ts`) implements pi-ai's `CredentialStore` over a new `credentials` table (migration #2, v1→v2 upgrade tested); per-provider async serialization for `modify`/`delete` (OAuth refresh-safe), `list()` serves metadata only; `ModelService.create({ credentialStore })` passes it to `ModelRuntime.create` (re-exports credential types from `packages/agent`); `CoreApp` wires it — pi never touches `~/.pi/agent/auth.json` (verified by mtime). `openDatabase` now chmods the db + WAL sidecars to 0600 (db holds secrets). | 15 new tests (store semantics incl. concurrency, repo, migration upgrade, ModelService wiring: login persists via pi's login flow, restart sees configured, runtime-only key not persisted, logout deletes) + E2E `scripts/creds-smoke.ts` (login→row→restart→logout, 0600 mode) |
+
+**Next steps (not started):** app shell wiring (`packages/app/src/bun/index.ts` → `CoreApp.create` + WS URL query param), Vue UI (Step 7), parallel-agent scenario, hardening/README.
+
+
+## 9. Follow-up task: pi credentials stored in sqlite
+
+**Goal.** pi's provider credentials (API keys + OAuth tokens) live in the my-pi
+sqlite database instead of `~/.pi/agent/auth.json`.
+
+**Approach (verified against pi 0.84.1 sources).** pi exposes a first-class
+extension point: `ModelRuntime.create({ credentials?: CredentialStore })` where
+`CredentialStore` (from `@earendil-works/pi-ai`) has exactly four methods —
+`read`, `list`, `modify`, `delete`. `ModelRuntime.login()` and OAuth refresh
+persist via `credentials.modify(...)`; `logout` via `delete`; runtime-only keys
+via an internal `RuntimeCredentials` overlay (in-memory, never persisted).
+Today `ModelService.create()` passes no options, so pi falls back to the default
+file `join(getAgentDir(), "auth.json")` = `~/.pi/agent/auth.json` (chmod 0600).
+The task is therefore: implement a sqlite-backed `CredentialStore` and hand it
+to `ModelRuntime.create` — pi keeps all auth orchestration; only the storage
+backend is replaced. No RPC surface changes needed (`models.login` /
+`models.logout` / `modelsSetApiKey` already flow through `ModelService`).
+
+**Confirmed decisions (user Q&A):**
+1. **No migration** of existing `~/.pi/agent/auth.json` — fresh start; users
+   re-enter keys in the app. pi will never read that file again (supersedes
+   §5 risk 6 and the §6 checklist line "existing `~/.pi/agent/auth.json`
+   credentials work out of the box").
+2. **auth.json left untouched** — not deleted, not renamed, never written.
+3. **At-rest protection: parity with auth.json** — plaintext, db file chmod
+   0600. No encryption / OS keychain.
+
+### 9.1 Data model (migration #2 — `user_version` 1 → 2)
+
+```sql
+CREATE TABLE IF NOT EXISTS credentials (
+  provider_id    TEXT PRIMARY KEY,      -- one credential per provider (pi invariant)
+  type           TEXT NOT NULL,         -- 'api_key' | 'oauth' (denormalized for list())
+  credential_json TEXT NOT NULL,        -- full Credential blob (ApiKeyCredential | OAuthCredential)
+  updated_at     INTEGER NOT NULL
+)
+```
+
+FKs stay OFF (app-managed, per §3.2). Storing the whole `Credential` JSON blob
+covers both API keys (incl. per-provider `env`, e.g. Cloudflare account/gateway
+ids) and OAuth tokens (refresh/access/expiry) without type-specific columns;
+the `type` column exists only so `list()` can return `CredentialInfo` metadata
+without touching secret material.
+
+### 9.2 Files involved
+
+| File | Change |
+|---|---|
+| `packages/core/src/db/schema.ts` | Append migration #2 (`credentials` table above). Existing DBs are at version 1 → upgrade in place. |
+| `packages/core/src/db/connection.ts` | After open: `chmodSync(dbPath, 0o600)` (db now holds secrets; WAL sidecars inherit mode). |
+| `packages/core/src/db/repos/credentials.ts` (new) | `CredentialsRepo`: `get/upsert/delete/list` (typed CRUD, no business logic); export from `repos/index.ts`. |
+| `packages/core/src/db/credential-store.ts` (new) | `SqliteCredentialStore implements CredentialStore` (semantics below). |
+| `packages/agent/src/model-service.ts` | `ModelServiceOptions` gains `credentialStore?: CredentialStore`; build `ModelRuntime.create` options explicitly (`{ credentials, authPath, modelsPath, allowModelNetwork }`) instead of spreading options. |
+| `packages/agent/src/index.ts` | Re-export `CredentialStore`, `Credential`, `CredentialInfo`, `ApiKeyCredential`, `OAuthCredential`, `AuthOperationOptions` from pi-ai (core never imports pi packages directly). |
+| `packages/core/src/app.ts` | `CoreApp.create()`: build `CredentialsRepo` + `SqliteCredentialStore`, pass to `ModelService.create({ credentialStore })`. |
+| Tests | `db.test.ts` (table in migration list, idempotency), new `credential-store.test.ts` (store semantics), ModelService wiring test. |
+
+### 9.3 Steps (ordered, each independently verifiable)
+
+1. **Migration + repo (S).** Migration #2 in `schema.ts`; chmod 0600 in
+   `connection.ts`; `CredentialsRepo` (`get/upsert/delete/list`) + export.
+   Verify: `db.test.ts` extended — `credentials` in expected tables, migration
+   from a v1 db upgrades to v2 without data loss, repo round-trip, upsert
+   overwrite, delete idempotent, `list()` returns type but no secrets.
+2. **`SqliteCredentialStore` (M).** Serialization is the only hard part: pi's
+   contract requires mutual exclusion per provider, and OAuth refresh runs
+   *inside* `modify` (network I/O) — so use one in-process async queue per
+   provider (`Map<string, Promise<void>>` chain, mirroring pi's
+   `InMemoryAuthStorageBackend.asyncChain`); do NOT wrap the async `fn` in a
+   sqlite transaction. Semantics: `read` → parse blob, missing/corrupt →
+   `undefined` (best-effort, no throw); `list` → type tags only; `modify` →
+   serialized, fn sees current credential, `undefined` return leaves entry
+   unchanged, fn rejections propagate without writing; `delete` → serialized
+   against `modify`, idempotent. Single-process only (one my-pi process; note
+   cross-process locking as future work).
+   Verify: `credential-store.test.ts` — read missing → undefined; modify
+   creates; fn sees current; `undefined` return = no change; concurrent
+   `modify` for the same provider serialize (deferred-based order test);
+   different providers don't block each other; delete idempotent; `list()`
+   exposes no key material; corrupt blob → `undefined` without throwing.
+3. **Agent wiring (S).** Re-export credential types; `ModelServiceOptions`
+   gains `credentialStore`; explicit `ModelRuntime.create` options object.
+   Verify: `bun run check` in agent + core; wiring test — `ModelService.create`
+   with the store succeeds, `listCredentials()` empty on fresh store,
+   `setRuntimeApiKey` → `hasConfiguredAuth` true but `store.read` still
+   `undefined` (runtime overlay is not persisted).
+4. **CoreApp wiring (S).** Build repo + store in `create()`, pass to
+   `ModelService.create({ credentialStore })`. No RPC changes.
+   Verify: `bun run check` + `bun test` green; `scripts/smoke.ts` still runs.
+5. **Manual E2E (S).** `MY_PI_DB_PATH=/tmp/creds-test.db bun run dev`:
+   login → row in `credentials`; restart → `authConfigured` true; auth.json
+   never created/modified (hash before/after); `setRuntimeApiKey` not
+   persisted across restart; logout → row deleted; db file mode `0600`
+   (incl. `-wal` sidecar mode).
+
+### 9.4 Risks & tricky parts
+
+1. **`modify` serialization** — per-provider async queue; never hold a sqlite
+   write across the network-bound `fn`. Concurrency test mandatory.
+2. **Secrets now colocated with app data** — same posture as auth.json
+   (plaintext, 0600) but in the main db → chmod 0600 in `connection.ts`;
+   verify `-wal`/`-shm` sidecar modes.
+3. **pi contract edge cases** — `modify` returning `undefined` = leave
+   unchanged (login-during-refresh depends on it); fn throw → propagate, no
+   write; corrupt stored JSON → degrade to "no credential", never crash boot
+   availability checks.
+4. **No key migration (declined)** — users with existing auth.json keys see
+   `authConfigured: false` until they re-enter keys; README/UI note.
+5. **OAuth works automatically** — whole blob stored; refresh rotation goes
+   through `modify` under our lock; no extra work beyond the slow-`fn` test.
+6. **Pinned pi API** — `CredentialStore` shape stable at 0.84.1; all pi
+   imports stay confined to `packages/agent`.
+
+### 9.5 Out of scope
+
+- Migrating/importing `~/.pi/agent/auth.json` (declined) — file stops being
+  read; left untouched.
+- `models.json` catalog cache (`modelsPath`) — still file-based.
+- Encryption at rest / OS keychain (declined — parity with auth.json).
+- Cross-process credential locking, multi-user/keyring, credential rotation
+  UI, `models.listCredentials` RPC (no consumer yet).
+
+### 9.6 Verification checklist (definition of done)
+
+- [ ] `bun install` clean; `bun run check` passes in `shared`, `agent`, `core`.
+- [ ] `bun run test` passes — updated `db.test.ts` (credentials table,
+      idempotency, v1→v2 upgrade), new `credential-store.test.ts` (full
+      semantics incl. concurrency), ModelService wiring test (runtime keys not
+      persisted).
+- [ ] Manual (§9.3 step 5): login persists across restart via sqlite;
+      `~/.pi/agent/auth.json` untouched/never written; runtime-only key not
+      persisted; logout deletes the row; db file mode `0600`.
+- [ ] No regressions in `scripts/smoke.ts` / `scripts/agent-smoke.ts` and the
+      existing unit suite.
+
+Effort: ~0.5d total; Step 9.3.2 (store semantics + tests) is the only
+non-trivial piece.

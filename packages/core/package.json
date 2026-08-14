@@ -1,0 +1,21 @@
+{
+	"name": "@my-pi/core",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "Workspace/session management, sqlite data layer, agent pool, JSON-RPC server",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@my-pi/agent": "workspace:*",
+		"@my-pi/shared": "workspace:*",
+		"typebox": "1.3.7"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.14",
+		"typescript": "^5.9.2"
+	}
+}

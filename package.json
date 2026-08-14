@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "bun run --cwd packages/shared check && bun run --cwd packages/agent check && bun run --cwd packages/core check",
+    "test": "bun run --cwd packages/shared test && bun run --cwd packages/agent test && bun run --cwd packages/core test",
+    "dev": "bun run --cwd packages/app dev"
   },
   "repository": {
     "type": "git",
