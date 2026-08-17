@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue"
-import ChatView from "./ChatView.vue"
-import DraftChat from "./DraftChat.vue"
+import ChatView from "../components/ChatView.vue"
+import DraftChat from "../components/DraftChat.vue"
 import { useStore } from "../store"
 
 const store = useStore()

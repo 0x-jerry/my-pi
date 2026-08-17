@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router"
 import IconAiChat from "~icons/hugeicons/ai-chat-01"
 import IconPuzzle from "~icons/hugeicons/puzzle"
 import IconSettings from "~icons/hugeicons/settings-01"
-import WorkspaceTree from "./views/WorkspaceTree.vue"
+import WorkspaceTree from "./components/WorkspaceTree.vue"
 import { useStore } from "./store"
 
 const store = useStore()
