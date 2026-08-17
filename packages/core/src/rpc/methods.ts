@@ -26,6 +26,11 @@ export function registerRpcMethods(server: JsonRpcServer, app: CoreApp): void {
 		app.removeWorkspace(params(p).id),
 	);
 
+	// Native dialogs (folder picker provided by the shell)
+	server.register(RpcMethod.dialogsPickFolder, async () =>
+		app.pickFolder ? await app.pickFolder() : null,
+	);
+
 	// Sessions
 	server.register(RpcMethod.sessionsList, (p) =>
 		app.sessions.list(params(p).workspaceId),

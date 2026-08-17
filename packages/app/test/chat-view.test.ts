@@ -1,6 +1,7 @@
 import { reactive } from "vue"
 import { describe, expect, test, vi } from "vitest"
 import { mount } from "@vue/test-utils"
+import ElementPlus from "element-plus"
 import ChatView from "../src/mainview/views/ChatView.vue"
 import { StoreKey } from "../src/mainview/store"
 import type { SessionInfo, StoredMessage } from "@my-pi/shared"
@@ -91,7 +92,10 @@ function fakeStore(overrides: Partial<FakeStoreState> = {}) {
 function mountChat(store: ReturnType<typeof fakeStore>) {
   return mount(ChatView, {
     props: { sessionId: "s1" },
-    global: { provide: { [StoreKey]: store } },
+    global: {
+      plugins: [ElementPlus],
+      provide: { [StoreKey]: store },
+    },
   })
 }
 
@@ -186,7 +190,7 @@ describe("ChatView", () => {
       pendingSend: null,
     }
     const wrapper = mountChat(store)
-    await wrapper.find("button.danger").trigger("click")
+    await wrapper.find("button.el-button--danger").trigger("click")
     expect(store.abort).toHaveBeenCalledWith("s1")
   })
 
@@ -195,7 +199,7 @@ describe("ChatView", () => {
     const wrapper = mountChat(store)
     const textarea = wrapper.find("textarea")
     await textarea.setValue("hello pi")
-    await wrapper.find("button.primary").trigger("click")
+    await wrapper.find("button.el-button--primary").trigger("click")
 
     expect(store.sendMessage).toHaveBeenCalledWith("s1", "hello pi")
     expect((textarea.element as HTMLTextAreaElement).value).toBe("")
@@ -212,7 +216,7 @@ describe("ChatView", () => {
       pendingSend: null,
     }
     const wrapper = mountChat(store)
-    const sendBtn = wrapper.find("button.primary")
+    const sendBtn = wrapper.find("button.el-button--primary")
     expect((sendBtn.element as HTMLButtonElement).disabled).toBe(true)
   })
 

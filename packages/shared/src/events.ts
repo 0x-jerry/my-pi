@@ -56,6 +56,7 @@ export type CoreEvent =
 			result: unknown;
 	  }
 	| { type: "session.message_end"; sessionId: string; message: StoredMessage }
+	| { type: "session.title_updated"; sessionId: string; title: string; updatedAt?: number }
 	| {
 			type: "session.run_end";
 			sessionId: string;

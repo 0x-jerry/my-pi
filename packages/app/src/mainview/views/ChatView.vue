@@ -3,6 +3,11 @@ import { computed, nextTick, ref, watch } from "vue"
 import type { StoredMessage } from "@my-pi/shared"
 import { messageError, renderStoredMessage } from "../utils/render"
 import { fmtUsage, jsonArgs } from "../utils/format"
+import IconFork from "~icons/hugeicons/fork"
+import IconSteering from "~icons/hugeicons/steering"
+import IconArrowRight from "~icons/hugeicons/arrow-right-01"
+import IconStop from "~icons/hugeicons/stop"
+import IconTelegram from "~icons/hugeicons/telegram"
 import { useStore, type StreamingState } from "../store"
 
 const props = defineProps<{ sessionId: string }>()
@@ -129,13 +134,34 @@ function msgModel(msg: StoredMessage): string {
         <h2>{{ session?.title ?? "Session" }}</h2>
         <span class="chat-model">{{ session?.modelId ?? "no model" }}</span>
       </div>
-      <button v-if="messages.length > 0" class="btn ghost" @click="forkLatest">
+      <el-button
+        v-if="messages.length > 0"
+        text
+        :icon="IconFork"
+        @click="forkLatest"
+      >
         Fork at latest
-      </button>
+      </el-button>
     </header>
 
-    <div v-if="actionError" class="banner err">{{ actionError }}</div>
-    <div v-if="streaming.error" class="banner err">{{ streaming.error }}</div>
+    <el-alert
+      v-if="actionError"
+      type="error"
+      :closable="false"
+      show-icon
+      class="banner err"
+    >
+      {{ actionError }}
+    </el-alert>
+    <el-alert
+      v-if="streaming.error"
+      type="error"
+      :closable="false"
+      show-icon
+      class="banner err"
+    >
+      {{ streaming.error }}
+    </el-alert>
 
     <div ref="scroller" class="messages">
       <!-- persisted transcript -->
@@ -148,9 +174,15 @@ function msgModel(msg: StoredMessage): string {
         <div class="msg-meta">
           <span class="msg-role">{{ msg.role }}</span>
           <span v-if="msgModel(msg)" class="msg-model">{{ msgModel(msg) }}</span>
-          <button class="fork-here" title="Fork at this message" @click="forkHere(msg)">
+          <el-button
+            text
+            size="small"
+            class="fork-here"
+            :icon="IconFork"
+            @click="forkHere(msg)"
+          >
             fork here
-          </button>
+          </el-button>
         </div>
         <template v-for="(block, i) in renderStoredMessage(msg)" :key="`${msg.id}-${i}`">
           <p v-if="block.kind === 'text'" class="text">{{ block.text }}</p>
@@ -175,7 +207,9 @@ function msgModel(msg: StoredMessage): string {
           <div v-else-if="block.kind === 'toolCall'" class="tool-call">
             <div class="tool-head">
               <span class="tool-name">{{ block.toolName }}</span>
-              <span class="tool-id">{{ block.toolCallId.slice(0, 8) }}</span>
+              <el-tag size="small" effect="plain" type="info" class="tool-id">
+                {{ block.toolCallId.slice(0, 8) }}
+              </el-tag>
             </div>
             <pre class="tool-args">{{ jsonArgs(block.args) }}</pre>
           </div>
@@ -183,9 +217,9 @@ function msgModel(msg: StoredMessage): string {
           <div v-else-if="block.kind === 'toolResult'" class="tool-result" :class="{ error: block.isError }">
             <div class="tool-head">
               <span class="tool-name">{{ block.toolName }}</span>
-              <span :class="block.isError ? 'tool-err' : 'tool-ok'">
+              <el-tag size="small" :type="block.isError ? 'danger' : 'success'">
                 {{ block.isError ? "error" : "ok" }}
-              </span>
+              </el-tag>
             </div>
             <pre v-if="block.text" class="tool-text">{{ block.text }}</pre>
           </div>
@@ -215,7 +249,10 @@ function msgModel(msg: StoredMessage): string {
 
       <!-- live streaming placeholder -->
       <article v-if="streamText || streamThinking || streaming.activeTool" class="msg assistant streaming">
-        <div class="msg-meta"><span class="msg-role">assistant</span><span class="streaming-dot">●</span></div>
+        <div class="msg-meta">
+          <span class="msg-role">assistant</span>
+          <span class="streaming-dot" aria-label="streaming" />
+        </div>
         <p v-if="streamText" class="text">{{ streamText }}</p>
         <details v-if="streamThinking" class="thinking" open>
           <summary>thinking…</summary>
@@ -224,19 +261,21 @@ function msgModel(msg: StoredMessage): string {
         <div v-if="streaming.activeTool" class="tool-call">
           <div class="tool-head">
             <span class="tool-name">{{ streaming.activeTool.toolName }}</span>
-            <span class="tool-id">running…</span>
+            <el-tag size="small" effect="plain" type="warning" class="tool-id">
+              running…
+            </el-tag>
           </div>
           <pre v-if="streaming.activeTool.args" class="tool-args">
 {{ jsonArgs(streaming.activeTool.args) }}</pre>
         </div>
       </article>
 
-      <p
+      <div
         v-if="messages.length === 0 && !streaming.pendingSend && !streamText && !streamThinking && !streaming.activeTool && streaming.parts.length === 0"
         class="empty-hint"
       >
-        Send a message to start the session.
-      </p>
+        <el-empty description="Send a message to start the session." :image-size="80" />
+      </div>
     </div>
 
     <footer class="chat-foot">
@@ -245,23 +284,40 @@ function msgModel(msg: StoredMessage): string {
         <template v-else>—</template>
       </div>
       <div class="input-row">
-        <textarea
+        <el-input
           v-model="input"
-          rows="2"
+          type="textarea"
+          :autosize="{ minRows: 2, maxRows: 6 }"
+          resize="none"
           placeholder="Message… (Enter to send, Shift+Enter for newline)"
           @keydown.enter.exact.prevent="send"
         />
         <div class="input-actions">
-          <button class="btn" :disabled="!input.trim() || running" @click="steer">
+          <el-button
+            :disabled="!input.trim() || running"
+            :icon="IconSteering"
+            @click="steer"
+          >
             Steer
-          </button>
-          <button class="btn" :disabled="!input.trim() || running" @click="followUp">
+          </el-button>
+          <el-button
+            :disabled="!input.trim() || running"
+            :icon="IconArrowRight"
+            @click="followUp"
+          >
             Follow-up
-          </button>
-          <button v-if="running" class="btn danger" @click="abort">Abort</button>
-          <button class="btn primary" :disabled="!input.trim() || running" @click="send">
+          </el-button>
+          <el-button v-if="running" type="danger" :icon="IconStop" @click="abort">
+            Abort
+          </el-button>
+          <el-button
+            type="primary"
+            :disabled="!input.trim() || running"
+            :icon="IconTelegram"
+            @click="send"
+          >
             Send
-          </button>
+          </el-button>
         </div>
       </div>
     </footer>
@@ -282,6 +338,7 @@ function msgModel(msg: StoredMessage): string {
   justify-content: space-between;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 .chat-title {
   display: flex;
@@ -297,12 +354,7 @@ function msgModel(msg: StoredMessage): string {
   font-size: 12px;
 }
 .banner {
-  padding: 8px 14px;
-  font-size: 13px;
-}
-.banner.err {
-  background: var(--bg-danger);
-  color: var(--danger);
+  margin: 8px 14px 0;
 }
 .messages {
   flex: 1;
@@ -344,16 +396,9 @@ function msgModel(msg: StoredMessage): string {
   color: var(--fg-dim);
 }
 .fork-here {
-  border: none;
-  background: transparent;
-  color: var(--fg-dim);
-  font-size: 11px;
-  cursor: pointer;
   padding: 0;
-}
-.fork-here:hover {
-  color: var(--accent);
-  text-decoration: underline;
+  height: auto;
+  font-size: 11px;
 }
 .text {
   margin: 0;
@@ -361,7 +406,7 @@ function msgModel(msg: StoredMessage): string {
   word-break: break-word;
 }
 .thinking {
-  border-left: 3px solid var(--fg-dim);
+  border-left: 3px solid var(--border);
   padding-left: 10px;
   margin: 4px 0;
 }
@@ -400,15 +445,6 @@ function msgModel(msg: StoredMessage): string {
   font-weight: 600;
 }
 .tool-id {
-  color: var(--fg-dim);
-  font-size: 11px;
-}
-.tool-ok {
-  color: var(--ok);
-  font-size: 11px;
-}
-.tool-err {
-  color: var(--danger);
   font-size: 11px;
 }
 .tool-args,
@@ -425,7 +461,11 @@ function msgModel(msg: StoredMessage): string {
   margin: 4px 0 0;
 }
 .streaming-dot {
-  color: var(--accent);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
   animation: pulse 1.2s infinite;
 }
 @keyframes pulse {
@@ -447,6 +487,7 @@ function msgModel(msg: StoredMessage): string {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: var(--bg-panel);
 }
 .usage {
   color: var(--fg-dim);
@@ -457,19 +498,12 @@ function msgModel(msg: StoredMessage): string {
   gap: 8px;
   align-items: flex-end;
 }
-.input-row textarea {
+.input-row :deep(.el-textarea) {
   flex: 1;
-  resize: none;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-input);
-  color: var(--fg);
-  font-size: 13px;
-  font-family: inherit;
 }
 .input-actions {
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
 }
 </style>

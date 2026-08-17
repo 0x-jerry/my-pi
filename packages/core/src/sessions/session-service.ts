@@ -13,6 +13,7 @@ import {
 	WorkspacesRepo,
 	type SessionRow,
 } from "../db/repos";
+import { DEFAULT_SESSION_TITLE } from "@my-pi/shared";
 import { SettingsService } from "../settings/settings-service";
 
 export interface ResumePayload {
@@ -115,7 +116,7 @@ export class SessionService {
 		const row: SessionRow = {
 			id: randomUUID(),
 			workspaceId: input.workspaceId,
-			title: input.title ?? "New session",
+			title: input.title ?? DEFAULT_SESSION_TITLE,
 			status: "idle",
 			modelProvider: model?.provider,
 			modelId: model?.id,
@@ -127,6 +128,7 @@ export class SessionService {
 			totalCacheRead: 0,
 			totalCacheWrite: 0,
 			totalCost: 0,
+			autoTitle: input.autoTitle ?? false,
 			createdAt: now,
 			updatedAt: now,
 			lastActivityAt: now,
@@ -150,6 +152,18 @@ export class SessionService {
 		this.usage.deleteBySession(id);
 		this.messages.deleteBySession(id);
 		this.sessions.remove(id);
+	}
+
+	/** Replace the session title (used by LLM auto-titling). */
+	updateTitle(id: string, title: string): SessionInfo {
+		if (!this.sessions.byId(id)) throw new Error(`Session not found: ${id}`);
+		this.sessions.updateTitle(id, title);
+		return this.get(id);
+	}
+
+	/** True when the session was created via the draft flow (LLM-titling eligible). */
+	isAutoTitleEligible(id: string): boolean {
+		return this.sessions.byId(id)?.autoTitle ?? false;
 	}
 
 	/**
@@ -186,6 +200,7 @@ export class SessionService {
 			totalCacheRead: totals.cacheRead,
 			totalCacheWrite: totals.cacheWrite,
 			totalCost: totals.cost,
+			autoTitle: false,
 			createdAt: now,
 			updatedAt: now,
 			lastActivityAt: now,

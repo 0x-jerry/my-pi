@@ -26,6 +26,7 @@ import { EventBus } from "./events/event-bus";
 import { SettingsService } from "./settings/settings-service";
 import { WorkspaceService } from "./workspaces/workspace-service";
 import { SessionService } from "./sessions/session-service";
+import { TitleService } from "./sessions/title-service";
 import { PluginService } from "./plugins/plugin-service";
 import { builtinPlugins } from "./plugins/builtin";
 import { AgentPool } from "./agents/agent-pool";
@@ -46,6 +47,12 @@ export interface CoreAppOptions {
 	wsToken?: string;
 	/** If set, only this Origin header may connect to the RPC server. */
 	wsAllowedOrigin?: string;
+	/**
+	 * Native "pick a folder" dialog, provided by the shell. Returns the
+	 * selected absolute path or null when the user cancels. When omitted,
+	 * `dialogs.pickFolder` resolves to null (no dialog available).
+	 */
+	pickFolder?: () => Promise<string | null>;
 }
 
 /** Server→client notification methods (CoreEvent types). */
@@ -56,6 +63,7 @@ const PUBLIC_EVENTS: CoreEvent["type"][] = [
 	"session.tool_update",
 	"session.tool_end",
 	"session.message_end",
+	"session.title_updated",
 	"session.run_end",
 	"workspace.updated",
 ];
@@ -139,8 +147,11 @@ export class CoreApp {
 	readonly modelService: ModelService;
 	readonly pool: AgentPool;
 	readonly reader: TranscriptReader;
+	readonly titleService: TitleService;
 	readonly rpc: JsonRpcServer;
 	readonly wsToken: string;
+	/** Native folder-picker hook supplied by the shell (see CoreAppOptions). */
+	readonly pickFolder: (() => Promise<string | null>) | null;
 	wsPort = 0;
 
 	private broadcaster: Broadcaster;
@@ -155,9 +166,11 @@ export class CoreApp {
 		modelService: ModelService;
 		pool: AgentPool;
 		reader: TranscriptReader;
+		titleService: TitleService;
 		rpc: JsonRpcServer;
 		writer: PersistenceWriter;
 		wsToken: string;
+		pickFolder: (() => Promise<string | null>) | null;
 	}) {
 		this.db = deps.db;
 		this.bus = deps.bus;
@@ -168,8 +181,10 @@ export class CoreApp {
 		this.modelService = deps.modelService;
 		this.pool = deps.pool;
 		this.reader = deps.reader;
+		this.titleService = deps.titleService;
 		this.rpc = deps.rpc;
 		this.wsToken = deps.wsToken;
+		this.pickFolder = deps.pickFolder;
 		this.broadcaster = new Broadcaster(deps.rpc, this.bus);
 	}
 
@@ -214,6 +229,7 @@ export class CoreApp {
 			usage: usageRepo,
 			sessions: sessionsRepo,
 		});
+		const titleService = new TitleService(bus, sessions, modelService);
 		const rpc = new JsonRpcServer({
 			host: options.wsHost,
 			port: options.wsPort,
@@ -231,14 +247,17 @@ export class CoreApp {
 			modelService,
 			pool,
 			reader,
+			titleService,
 			rpc,
 			writer,
 			wsToken,
+			pickFolder: options.pickFolder ?? null,
 		});
 
 		registerRpcMethods(rpc, app);
 		app.wsPort = await rpc.start();
 		writer.start();
+		app.titleService.start();
 		app.broadcaster.start();
 		return app;
 	}

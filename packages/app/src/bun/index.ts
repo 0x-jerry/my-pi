@@ -1,4 +1,4 @@
-import { BrowserWindow, Updater } from "electrobun/bun"
+import { ApplicationMenu, BrowserWindow, Updater, Utils } from "electrobun/bun"
 import { CoreApp } from "@my-pi/core"
 
 const DEV_SERVER_PORT = 5173
@@ -38,8 +38,20 @@ function withServerParams(url: string, wsPort: number, wsToken: string): string 
 }
 
 // Boot core: sqlite + services + agent pool + JSON-RPC server on a random
-// localhost port with a fresh per-launch token.
-const app = await CoreApp.create({ wsPort: 0 })
+// localhost port with a fresh per-launch token. The folder picker uses
+// electrobun's native OS dialog (directories only, single selection).
+const app = await CoreApp.create({
+  wsPort: 0,
+  pickFolder: async () => {
+    const [dir] = await Utils.openFileDialog({
+      startingFolder: "~/",
+      canChooseFiles: false,
+      canChooseDirectory: true,
+      allowsMultipleSelection: false,
+    })
+    return dir || null
+  },
+})
 console.log(`CoreApp started: ws://127.0.0.1:${app.wsPort}/ws`)
 
 const baseUrl = await getMainViewUrl()
@@ -58,6 +70,57 @@ const mainWindow = new BrowserWindow({
     y: 200,
   },
 })
+
+// Install the standard macOS menu bar. Without the Edit menu, the built-in
+// cut/copy/paste roles are never wired to the responder chain, so ⌘V (and
+// ⌘C / ⌘X / ⌘A) don't reach the webview's text fields. Adding these role-based
+// items restores native paste (and the other editing shortcuts) in the shell.
+ApplicationMenu.setApplicationMenu([
+  {
+    label: "my-pi",
+    submenu: [
+      { role: "about" },
+      { type: "divider" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "showAll" },
+      { type: "divider" },
+      { role: "quit" },
+    ],
+  },
+  {
+    label: "Edit",
+    submenu: [
+      { role: "undo" },
+      { role: "redo" },
+      { type: "divider" },
+      { role: "cut" },
+      { role: "copy" },
+      { role: "paste" },
+      { role: "pasteAndMatchStyle" },
+      { role: "delete" },
+      { role: "selectAll" },
+    ],
+  },
+  {
+    label: "View",
+    submenu: [{ role: "toggleFullScreen" }],
+  },
+  {
+    label: "Window",
+    submenu: [
+      { role: "minimize" },
+      { role: "zoom" },
+      { type: "divider" },
+      { role: "close" },
+      { role: "bringAllToFront" },
+    ],
+  },
+  {
+    label: "Help",
+    submenu: [{ role: "showHelp" }],
+  },
+])
 
 /**
  * Deliver the WS config to the view. `views://` cannot carry query params,

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref } from "vue"
+import { ElMessage } from "element-plus"
 import type { ThinkingLevel } from "@my-pi/shared"
 import ModelPicker from "../components/ModelPicker.vue"
+import IconCheck from "~icons/hugeicons/checkmark-circle-01"
 import { useStore } from "../store"
 
 const store = useStore()
@@ -16,36 +18,40 @@ const THINKING_LEVELS: ThinkingLevel[] = [
   "max",
 ]
 
+// el-select can't hold undefined as a selectable option value — the "default"
+// choice is a sentinel string mapped to undefined at the API edge.
+const THINKING_DEFAULT = "__default__"
+
 const model = ref<{ provider: string; id: string } | null>(
   (store.state.settings.defaultModel as { provider: string; id: string } | undefined) ?? null,
 )
-const thinkingLevel = ref<ThinkingLevel | undefined>(
-  (store.state.settings.defaultThinkingLevel as ThinkingLevel | undefined) ?? undefined,
+const thinking = ref<string>(
+  (store.state.settings.defaultThinkingLevel as ThinkingLevel | undefined) ??
+    THINKING_DEFAULT,
 )
 const saving = ref(false)
-const error = ref<string | null>(null)
 
 async function saveModel() {
   if (!model.value) return
   saving.value = true
-  error.value = null
   try {
     await store.setDefaultModel(model.value)
+    ElMessage.success("Default model saved")
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    ElMessage.error(err instanceof Error ? err.message : String(err))
   } finally {
     saving.value = false
   }
 }
 
 async function saveThinking() {
-  if (!thinkingLevel.value) return
+  if (thinking.value === THINKING_DEFAULT) return
   saving.value = true
-  error.value = null
   try {
-    await store.setDefaultThinkingLevel(thinkingLevel.value)
+    await store.setDefaultThinkingLevel(thinking.value as ThinkingLevel)
+    ElMessage.success("Thinking level saved")
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    ElMessage.error(err instanceof Error ? err.message : String(err))
   } finally {
     saving.value = false
   }
@@ -57,33 +63,32 @@ async function saveThinking() {
     <h2>Settings</h2>
     <p class="note">Defaults used when creating new sessions.</p>
 
-    <div v-if="error" class="banner err">{{ error }}</div>
-
     <div class="setting">
       <h3>Default model</h3>
       <ModelPicker v-model="model" />
-      <button
-        class="btn primary"
-        :disabled="!model || saving"
-        @click="saveModel"
-      >
-        Save default model
-      </button>
+      <div class="setting-actions">
+        <el-button type="primary" :disabled="!model || saving" :icon="IconCheck" @click="saveModel">
+          Save default model
+        </el-button>
+      </div>
     </div>
 
     <div class="setting">
       <h3>Default thinking level</h3>
-      <select v-model="thinkingLevel">
-        <option :value="undefined">— default —</option>
-        <option v-for="l in THINKING_LEVELS" :key="l" :value="l">{{ l }}</option>
-      </select>
-      <button
-        class="btn primary"
-        :disabled="!thinkingLevel || saving"
-        @click="saveThinking"
-      >
-        Save thinking level
-      </button>
+      <el-select v-model="thinking" class="level-select" filterable>
+        <el-option label="— default —" :value="THINKING_DEFAULT" />
+        <el-option v-for="l in THINKING_LEVELS" :key="l" :label="l" :value="l" />
+      </el-select>
+      <div class="setting-actions">
+        <el-button
+          type="primary"
+          :disabled="thinking === THINKING_DEFAULT || saving"
+          :icon="IconCheck"
+          @click="saveThinking"
+        >
+          Save thinking level
+        </el-button>
+      </div>
     </div>
   </section>
 </template>
@@ -106,13 +111,6 @@ async function saveThinking() {
   font-size: 12px;
   margin: 0;
 }
-.banner.err {
-  background: var(--bg-danger);
-  color: var(--danger);
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-}
 .setting {
   display: flex;
   flex-direction: column;
@@ -120,20 +118,14 @@ async function saveThinking() {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
+  background: var(--bg-panel);
 }
 .setting h3 {
   margin: 0;
   font-size: 14px;
 }
-.setting select {
+.level-select {
   align-self: flex-start;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-input);
-  color: var(--fg);
-}
-.setting .btn {
-  align-self: flex-start;
+  width: 200px;
 }
 </style>

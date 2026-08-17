@@ -97,4 +97,12 @@ export const MIGRATIONS: string[][] = [
 			updated_at INTEGER NOT NULL
 		)`,
 	],
+
+	// Migration 3: draft-created sessions opt into LLM auto-titling.
+	// auto_title = 1 only for sessions created via the + icon draft flow;
+	// their title starts as DEFAULT_SESSION_TITLE and is generated from the
+	// first user message (see TitleService).
+	[
+		`ALTER TABLE sessions ADD COLUMN auto_title INTEGER NOT NULL DEFAULT 0`,
+	],
 ];

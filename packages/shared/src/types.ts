@@ -138,6 +138,11 @@ export interface CreateSessionInput {
 	model?: { provider: string; id: string };
 	thinkingLevel?: ThinkingLevel;
 	systemPrompt?: string;
+	/**
+	 * Session was created as a placeholder (draft flow); the title starts as
+	 * DEFAULT_SESSION_TITLE and is LLM-generated from the first user message.
+	 */
+	autoTitle?: boolean;
 }
 
 export interface AddPluginInput {

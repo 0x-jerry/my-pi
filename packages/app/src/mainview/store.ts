@@ -23,6 +23,15 @@ export interface ActiveToolState {
   isError?: boolean
 }
 
+/**
+ * A local-only placeholder session shown in the tree after clicking "+".
+ * No server row exists until the first message is sent (see sendDraft).
+ */
+export interface DraftSession {
+  localId: string
+  workspaceId: string
+}
+
 /** A completed streamed segment (frozen at a tool boundary mid-run). */
 export interface StreamedPart {
   text: string
@@ -73,6 +82,7 @@ export class Store {
     activeWorkspaceId: null as string | null,
     sessions: [] as SessionInfo[],
     activeSessionId: null as string | null,
+    drafts: [] as DraftSession[],
     messagesBySession: {} as Record<string, StoredMessage[]>,
     streaming: {} as Record<string, StreamingState>,
     lastUsage: {} as Record<string, UsageSummary | undefined>,
@@ -100,6 +110,7 @@ export class Store {
     this.on(RpcEvent.sessionToolEnd, (p) => this.handleToolEnd(p))
     this.on(RpcEvent.sessionMessageEnd, (p) => this.handleMessageEnd(p))
     this.on(RpcEvent.sessionRunEnd, (p) => this.handleRunEnd(p))
+    this.on(RpcEvent.sessionTitleUpdated, (p) => this.handleTitleUpdated(p))
     this.on(RpcEvent.workspaceUpdated, (p) => this.handleWorkspaceUpdated(p))
   }
 
@@ -140,7 +151,7 @@ export class Store {
       this.state.activeWorkspaceId
         ? this.loadSessions(this.state.activeWorkspaceId)
         : Promise.resolve(),
-      this.state.activeSessionId
+      this.state.activeSessionId && !this.isDraft(this.state.activeSessionId)
         ? this.loadMessages(this.state.activeSessionId)
         : Promise.resolve(),
     ])
@@ -225,6 +236,11 @@ export class Store {
 
   // ---- workspaces ----
 
+  /** Open the shell's native folder picker; resolves to a path or null. */
+  async pickFolder(): Promise<string | null> {
+    return this.client.call<string | null>(RpcMethod.dialogsPickFolder)
+  }
+
   async createWorkspace(name: string, path: string): Promise<Workspace> {
     const ws = await this.client.call<Workspace>(RpcMethod.workspacesCreate, {
       name,
@@ -241,6 +257,7 @@ export class Store {
       this.state.activeSessionId = null
       this.state.sessions = []
     }
+    this.state.drafts = this.state.drafts.filter((d) => d.workspaceId !== id)
     await this.loadWorkspaces()
   }
 
@@ -251,6 +268,59 @@ export class Store {
     void this.loadPluginsForWorkspace(id).catch((err) => {
       this.state.error = errMessage(err)
     })
+  }
+
+  // ---- drafts (placeholder sessions created via the tree "+") ----
+
+  private draftSeq = 0
+
+  /** Add a local placeholder node; the server session appears on first message. */
+  startDraft(workspaceId: string): string {
+    const localId = `draft:${++this.draftSeq}:${Date.now()}`
+    this.state.drafts.push({ localId, workspaceId })
+    return localId
+  }
+
+  /** Select a draft node without any server transcript load. */
+  openDraft(localId: string): void {
+    if (!this.isDraft(localId)) return
+    this.state.activeSessionId = localId
+  }
+
+  /** Drop a local placeholder (no server call). */
+  discardDraft(localId: string): void {
+    this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
+    if (this.state.activeSessionId === localId) this.state.activeSessionId = null
+  }
+
+  isDraft(id: string): boolean {
+    return this.state.drafts.some((d) => d.localId === id)
+  }
+
+  /**
+   * First message of a draft: create the real session server-side (autoTitle
+   * so the LLM names it after this run), then send the prompt. The draft is
+   * replaced by the persisted session node (createSession refetches the list).
+   */
+  async sendDraft(localId: string, text: string): Promise<void> {
+    const draft = this.state.drafts.find((d) => d.localId === localId)
+    if (!draft) throw new Error("Draft session not found")
+    // A draft's session is created with the default model. Bail before
+    // converting the draft so the composer stays put (message intact) instead
+    // of stranding the user on an empty real session with no model to run.
+    if (!this.state.settings.defaultModel) {
+      throw new Error(
+        "No model configured. Choose a default model in Settings before starting a session.",
+      )
+    }
+    const session = await this.createSession({
+      workspaceId: draft.workspaceId,
+      autoTitle: true,
+      model: this.state.settings.defaultModel as { provider: string; id: string },
+    })
+    this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
+    await this.openSession(session.id)
+    await this.sendMessage(session.id, text)
   }
 
   // ---- sessions ----
@@ -541,6 +611,22 @@ export class Store {
       this.state.activeWorkspaceId = null
       this.state.activeSessionId = null
       this.state.sessions = []
+    }
+    this.state.drafts = this.state.drafts.filter((d) => d.workspaceId !== workspaceId)
+  }
+
+  /** LLM auto-title landed: patch the row in place (no refetch needed). */
+  private handleTitleUpdated(p: unknown): void {
+    const { sessionId, title, updatedAt } = p as {
+      sessionId: string
+      title: string
+      updatedAt?: number
+    }
+    const row = this.state.sessions.find((s) => s.id === sessionId)
+    if (row) {
+      row.title = title
+      // Keep recency in sync with the server (updateTitle bumps updated_at).
+      if (updatedAt) row.updatedAt = updatedAt
     }
   }
 

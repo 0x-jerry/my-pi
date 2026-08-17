@@ -18,6 +18,7 @@ export interface SessionRow {
 	totalCacheRead: number;
 	totalCacheWrite: number;
 	totalCost: number;
+	autoTitle: boolean;
 	createdAt: number;
 	updatedAt: number;
 	lastActivityAt: number;
@@ -46,6 +47,7 @@ const SELECT = `SELECT
 	total_cache_read AS totalCacheRead,
 	total_cache_write AS totalCacheWrite,
 	total_cost AS totalCost,
+	auto_title AS autoTitle,
 	created_at AS createdAt, updated_at AS updatedAt,
 	last_activity_at AS lastActivityAt
 FROM sessions`;
@@ -61,8 +63,8 @@ export class SessionsRepo {
 					thinking_level, system_prompt, forked_from_session_id,
 					forked_from_message_seq, message_count, total_input_tokens,
 					total_output_tokens, total_cache_read, total_cache_write,
-					total_cost, created_at, updated_at, last_activity_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					total_cost, auto_title, created_at, updated_at, last_activity_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.run(
 				row.id,
@@ -81,6 +83,7 @@ export class SessionsRepo {
 				row.totalCacheRead,
 				row.totalCacheWrite,
 				row.totalCost,
+				row.autoTitle ? 1 : 0,
 				row.createdAt,
 				row.updatedAt,
 				row.lastActivityAt,
@@ -88,20 +91,24 @@ export class SessionsRepo {
 	}
 
 	all(): SessionRow[] {
-		return this.db.query(`${SELECT} ORDER BY last_activity_at DESC`).all() as SessionRow[];
+		const rows = this.db
+			.query(`${SELECT} ORDER BY last_activity_at DESC`)
+			.all() as (SessionRow & { autoTitle: number | boolean })[];
+		return rows.map((r) => ({ ...r, autoTitle: !!r.autoTitle }));
 	}
 
 	allByWorkspace(workspaceId: string): SessionRow[] {
-		return this.db
+		const rows = this.db
 			.query(`${SELECT} WHERE workspace_id = ? ORDER BY last_activity_at DESC`)
-			.all(workspaceId) as SessionRow[];
+			.all(workspaceId) as (SessionRow & { autoTitle: number | boolean })[];
+		return rows.map((r) => ({ ...r, autoTitle: !!r.autoTitle }));
 	}
 
 	byId(id: string): SessionRow | null {
-		return (
-			(this.db.query(`${SELECT} WHERE id = ?`).get(id) as SessionRow | undefined) ??
-			null
-		);
+		const row = this.db
+			.query(`${SELECT} WHERE id = ?`)
+			.get(id) as (SessionRow & { autoTitle: number | boolean }) | undefined;
+		return row ? { ...row, autoTitle: !!row.autoTitle } : null;
 	}
 
 	remove(id: string): void {
@@ -145,5 +152,12 @@ export class SessionsRepo {
 				`UPDATE sessions SET status = ?, updated_at = ?, last_activity_at = ? WHERE id = ?`,
 			)
 			.run(status, now, now, id);
+	}
+
+	updateTitle(id: string, title: string): void {
+		const now = Date.now();
+		this.db
+			.query(`UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?`)
+			.run(title, now, id);
 	}
 }

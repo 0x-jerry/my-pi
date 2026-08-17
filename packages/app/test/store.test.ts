@@ -487,4 +487,127 @@ describe("Store", () => {
     expect(st.thinkingBuf).toBe("")
     expect(st.activeTool).toMatchObject({ toolName: "bash" })
   })
+
+  test("drafts: start/open/discard lifecycle is local-only", () => {
+    const { client, store } = setup()
+    const id = store.startDraft("w1")
+    expect(store.isDraft(id)).toBe(true)
+    expect(store.state.drafts).toEqual([{ localId: id, workspaceId: "w1" }])
+
+    store.openDraft(id)
+    expect(store.state.activeSessionId).toBe(id)
+
+    store.discardDraft(id)
+    expect(store.isDraft(id)).toBe(false)
+    expect(store.state.drafts).toEqual([])
+    expect(store.state.activeSessionId).toBeNull()
+    expect(client.calls).toHaveLength(0)
+  })
+
+  test("sendDraft creates the real session, clears the draft, opens and sends", async () => {
+    const s = makeSession()
+    const { client, store } = setup({
+      [RpcMethod.sessionsCreate]: () => s,
+      [RpcMethod.sessionsList]: () => [s],
+      [RpcMethod.sessionsMessages]: () => [],
+      [RpcMethod.chatSend]: () => undefined,
+    })
+    store.state.activeWorkspaceId = "w1"
+    store.state.settings.defaultModel = { provider: "anthropic", id: "claude" }
+    const id = store.startDraft("w1")
+    store.openDraft(id)
+
+    await store.sendDraft(id, "hello world")
+
+    expect(store.state.drafts).toEqual([])
+    expect(store.state.activeSessionId).toBe("s1")
+    const createCall = client.calls.find((c) => c.method === RpcMethod.sessionsCreate)
+    expect(createCall?.params).toEqual({
+      workspaceId: "w1",
+      autoTitle: true,
+      model: { provider: "anthropic", id: "claude" },
+    })
+    const sendCall = client.calls.find((c) => c.method === RpcMethod.chatSend)
+    expect(sendCall?.params).toEqual({ sessionId: "s1", text: "hello world" })
+    expect(client.calls.some((c) => c.method === RpcMethod.sessionsList)).toBe(true)
+  })
+
+  test("sendDraft keeps the draft when no default model is configured", async () => {
+    const { client, store } = setup({
+      [RpcMethod.sessionsCreate]: () => {
+        throw new Error("should not be called")
+      },
+    })
+    store.state.activeWorkspaceId = "w1"
+    const id = store.startDraft("w1")
+    store.openDraft(id)
+
+    await expect(store.sendDraft(id, "hi")).rejects.toThrow(
+      "No model configured",
+    )
+    expect(store.isDraft(id)).toBe(true)
+    expect(store.state.activeSessionId).toBe(id)
+    expect(client.calls).toHaveLength(0)
+  })
+
+  test("sendDraft keeps the draft when session creation fails", async () => {
+    const { store } = setup({
+      [RpcMethod.sessionsCreate]: () => {
+        throw new Error("boom")
+      },
+    })
+    store.state.settings.defaultModel = { provider: "anthropic", id: "claude" }
+    const id = store.startDraft("w1")
+    store.openDraft(id)
+
+    await expect(store.sendDraft(id, "hi")).rejects.toThrow("boom")
+    expect(store.isDraft(id)).toBe(true)
+    expect(store.state.activeSessionId).toBe(id)
+  })
+
+  test("title_updated notification patches the session row in place", () => {
+    const { client, store } = setup()
+    store.state.sessions = [makeSession({ title: "New session", updatedAt: 100 })]
+    client.emit("session.title_updated", {
+      sessionId: "s1",
+      title: "Refactor the sidebar",
+      updatedAt: 200,
+    })
+    expect(store.state.sessions[0].title).toBe("Refactor the sidebar")
+    expect(store.state.sessions[0].updatedAt).toBe(200)
+  })
+
+  test("refreshAll skips message load for a draft session", async () => {
+    const s = makeSession()
+    const { client, store } = setup({
+      [RpcMethod.workspacesList]: () => [makeWorkspace()],
+      [RpcMethod.modelsProviders]: () => [],
+      [RpcMethod.pluginsList]: () => [],
+      [RpcMethod.settingsGet]: () => undefined,
+      [RpcMethod.sessionsList]: () => [s],
+    })
+    store.state.activeWorkspaceId = "w1"
+    const id = store.startDraft("w1")
+    store.openDraft(id)
+
+    await store.refreshAll()
+
+    expect(
+      client.calls.some((c) => c.method === RpcMethod.sessionsMessages),
+    ).toBe(false)
+  })
+
+  test("removeWorkspace clears drafts of that workspace", async () => {
+    const { store } = setup({
+      [RpcMethod.workspacesRemove]: () => undefined,
+      [RpcMethod.workspacesList]: () => [],
+    })
+    store.startDraft("w1")
+    store.startDraft("w2")
+    store.state.activeWorkspaceId = "w1"
+
+    await store.removeWorkspace("w1")
+
+    expect(store.state.drafts.map((d) => d.workspaceId)).toEqual(["w2"])
+  })
 })

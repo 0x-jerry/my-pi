@@ -49,27 +49,64 @@ describe("migrations", () => {
 		expect(version.user_version).toBeGreaterThan(0);
 	});
 
-	test("upgrades an existing v1 database to v2 without data loss", () => {
+	test("upgrades an existing v1 database to v3 without data loss", () => {
 		// Simulate a pre-credentials database: apply only migration #1 by setting
 		// user_version to 1 with the v1 tables present.
 		db.run(
 			`CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 		);
+		db.run(
+			`CREATE TABLE sessions (
+				id TEXT PRIMARY KEY,
+				workspace_id TEXT NOT NULL,
+				title TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'idle',
+				model_provider TEXT,
+				model_id TEXT,
+				thinking_level TEXT,
+				system_prompt TEXT,
+				forked_from_session_id TEXT,
+				forked_from_message_seq INTEGER,
+				message_count INTEGER NOT NULL DEFAULT 0,
+				total_input_tokens INTEGER NOT NULL DEFAULT 0,
+				total_output_tokens INTEGER NOT NULL DEFAULT 0,
+				total_cache_read INTEGER NOT NULL DEFAULT 0,
+				total_cache_write INTEGER NOT NULL DEFAULT 0,
+				total_cost REAL NOT NULL DEFAULT 0,
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL,
+				last_activity_at INTEGER NOT NULL
+			)`,
+		);
 		db.run("PRAGMA user_version = 1");
 		db.run(
 			`INSERT INTO workspaces (id, name, path, created_at, updated_at) VALUES ('w1', 'keep', '/tmp/keep', 1, 1)`,
+		);
+		db.run(
+			`INSERT INTO sessions (id, workspace_id, title, status, created_at, updated_at, last_activity_at) VALUES ('s1', 'w1', 'keep-title', 'idle', 1, 1, 1)`,
 		);
 		migrate(db);
 		// v1 data survives and the credentials table is added.
 		expect(db.query(`SELECT name FROM workspaces WHERE id = 'w1'`).get()).toEqual({
 			name: "keep",
 		});
+		expect(db.query(`SELECT title FROM sessions WHERE id = 's1'`).get()).toEqual({
+			title: "keep-title",
+		});
 		const tables = db
 			.query("SELECT name FROM sqlite_master WHERE type='table'")
 			.all() as { name: string }[];
 		expect(tables.map((t) => t.name)).toContain("credentials");
+		// Migration 3 adds the auto_title column (old sessions default to 0).
+		const cols = db
+			.query("PRAGMA table_info(sessions)")
+			.all() as { name: string }[];
+		expect(cols.map((c) => c.name)).toContain("auto_title");
+		expect(db.query(`SELECT auto_title FROM sessions WHERE id = 's1'`).get()).toEqual({
+			auto_title: 0,
+		});
 		const version = db.query("PRAGMA user_version").get() as { user_version: number };
-		expect(version.user_version).toBe(2);
+		expect(version.user_version).toBe(3);
 	});
 });
 
@@ -186,6 +223,7 @@ describe("sessions + messages repos", () => {
 			totalCacheRead: 0,
 			totalCacheWrite: 0,
 			totalCost: 0,
+			autoTitle: false,
 			createdAt: 1,
 			updatedAt: 1,
 			lastActivityAt: 1,

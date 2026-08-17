@@ -81,6 +81,7 @@ beforeEach(() => {
 		totalCacheRead: 0,
 		totalCacheWrite: 0,
 		totalCost: 0,
+		autoTitle: false,
 		createdAt: 1,
 		updatedAt: 1,
 		lastActivityAt: 1,

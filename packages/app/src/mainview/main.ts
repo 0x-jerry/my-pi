@@ -1,6 +1,10 @@
+// Element Plus light theme first, then app overrides (app.css wins on :root vars).
+import "element-plus/dist/index.css"
 import "./app.css"
 import { createApp } from "vue"
+import ElementPlus from "element-plus"
 import App from "./App.vue"
+import { router } from "./router"
 import { RpcClient } from "./rpc/client"
 import { Store, StoreKey } from "./store"
 
@@ -46,6 +50,8 @@ if (!config) {
 }
 
 const app = createApp(App)
+app.use(ElementPlus)
+app.use(router)
 app.provide(StoreKey, store)
 app.mount("#app")
 

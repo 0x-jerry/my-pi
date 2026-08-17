@@ -137,6 +137,7 @@ export const RpcMethod = {
 	workspacesList: "workspaces.list",
 	workspacesCreate: "workspaces.create",
 	workspacesRemove: "workspaces.remove",
+	dialogsPickFolder: "dialogs.pickFolder",
 	sessionsList: "sessions.list",
 	sessionsCreate: "sessions.create",
 	sessionsDelete: "sessions.delete",
@@ -169,6 +170,7 @@ export const RpcEvent = {
 	sessionToolUpdate: "session.tool_update",
 	sessionToolEnd: "session.tool_end",
 	sessionMessageEnd: "session.message_end",
+	sessionTitleUpdated: "session.title_updated",
 	sessionRunEnd: "session.run_end",
 	workspaceUpdated: "workspace.updated",
 } as const;

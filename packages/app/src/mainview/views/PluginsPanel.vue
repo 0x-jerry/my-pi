@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
+import { ElMessage, ElMessageBox } from "element-plus"
 import type { PluginInfo } from "@my-pi/shared"
+import IconPlus from "~icons/hugeicons/plus-sign"
+import IconDelete from "~icons/hugeicons/delete-01"
 import { useStore } from "../store"
 
 const store = useStore()
@@ -8,7 +11,6 @@ const store = useStore()
 const path = ref("")
 const scope = ref<"global" | "workspace">("global")
 const adding = ref(false)
-const error = ref<string | null>(null)
 
 // Always mirror store state (which refreshes on connect/reconnect and after
 // every mutation) instead of keeping private copies that can go stale.
@@ -23,9 +25,8 @@ const workspacePlugins = computed(() => {
 })
 
 async function add() {
-  error.value = null
   if (!path.value.trim()) {
-    error.value = "Plugin path is required"
+    ElMessage.warning("Plugin path is required")
     return
   }
   adding.value = true
@@ -38,29 +39,38 @@ async function add() {
     })
     path.value = ""
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    ElMessage.error(err instanceof Error ? err.message : String(err))
   } finally {
     adding.value = false
   }
 }
 
-async function toggle(p: PluginInfo) {
-  error.value = null
+async function toggle(p: PluginInfo, enabled: boolean) {
   try {
-    await store.setPluginEnabled(p.id, !p.enabled)
+    await store.setPluginEnabled(p.id, enabled)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    ElMessage.error(err instanceof Error ? err.message : String(err))
   }
 }
 
+function toggleSwitch(p: PluginInfo, value: unknown) {
+  void toggle(p, Boolean(value))
+}
+
 async function remove(p: PluginInfo) {
-  const ok = window.confirm(`Remove plugin "${p.name}"?`)
-  if (!ok) return
-  error.value = null
+  try {
+    await ElMessageBox.confirm(`Remove plugin "${p.name}"?`, "Remove plugin", {
+      type: "warning",
+      confirmButtonText: "Remove",
+      cancelButtonText: "Cancel",
+    })
+  } catch {
+    return // dismissed
+  }
   try {
     await store.removePlugin(p.id)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
+    ElMessage.error(err instanceof Error ? err.message : String(err))
   }
 }
 </script>
@@ -73,17 +83,16 @@ async function remove(p: PluginInfo) {
       toggle — restart the session (send a message again) to pick up changes.
     </p>
 
-    <div v-if="error" class="banner err">{{ error }}</div>
-
     <form class="add" @submit.prevent="add">
-      <input v-model="path" placeholder="/absolute/path/to/plugin" />
-      <select v-model="scope">
-        <option value="global">global</option>
-        <option value="workspace">workspace</option>
-      </select>
-      <button class="btn primary" type="submit" :disabled="adding">
-        {{ adding ? "Adding…" : "Add by path" }}
-      </button>
+      <el-input v-model="path" placeholder="/absolute/path/to/plugin" clearable />
+      <el-select v-model="scope" class="scope-select">
+        <el-option label="global" value="global" />
+        <el-option label="workspace" value="workspace" />
+      </el-select>
+      <el-button type="primary" native-type="submit" :loading="adding">
+        <el-icon v-if="!adding"><IconPlus /></el-icon>
+        <span>{{ adding ? "Adding…" : "Add by path" }}</span>
+      </el-button>
     </form>
 
     <div class="plugin-groups">
@@ -94,10 +103,23 @@ async function remove(p: PluginInfo) {
             <span class="pname">{{ p.name }}</span>
             <span class="psrc">{{ p.source }}</span>
             <span class="pdesc">{{ p.description }}</span>
-            <button class="btn ghost small" @click="toggle(p)">
-              {{ p.enabled ? "Disable" : "Enable" }}
-            </button>
-            <button class="btn ghost small danger" @click="remove(p)">Remove</button>
+            <el-switch
+              :model-value="p.enabled"
+              inline-prompt
+              active-text="on"
+              inactive-text="off"
+              class="pswitch"
+              @change="toggleSwitch(p, $event)"
+            />
+            <el-tooltip content="Remove plugin" placement="top">
+              <el-button
+                text
+                circle
+                class="pdel"
+                :icon="IconDelete"
+                @click="remove(p)"
+              />
+            </el-tooltip>
           </li>
           <li v-if="globalPlugins.length === 0" class="empty">—</li>
         </ul>
@@ -110,10 +132,23 @@ async function remove(p: PluginInfo) {
             <span class="pname">{{ p.name }}</span>
             <span class="psrc">{{ p.source }}</span>
             <span class="pdesc">{{ p.description }}</span>
-            <button class="btn ghost small" @click="toggle(p)">
-              {{ p.enabled ? "Disable" : "Enable" }}
-            </button>
-            <button class="btn ghost small danger" @click="remove(p)">Remove</button>
+            <el-switch
+              :model-value="p.enabled"
+              inline-prompt
+              active-text="on"
+              inactive-text="off"
+              class="pswitch"
+              @change="toggleSwitch(p, $event)"
+            />
+            <el-tooltip content="Remove plugin" placement="top">
+              <el-button
+                text
+                circle
+                class="pdel"
+                :icon="IconDelete"
+                @click="remove(p)"
+              />
+            </el-tooltip>
           </li>
           <li v-if="workspacePlugins.length === 0" class="empty">—</li>
         </ul>
@@ -134,34 +169,19 @@ async function remove(p: PluginInfo) {
 .note {
   color: var(--fg-dim);
   font-size: 12px;
-}
-.banner.err {
-  background: var(--bg-danger);
-  color: var(--danger);
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 13px;
+  margin: 0;
 }
 .add {
   display: flex;
   gap: 8px;
   margin: 12px 0;
+  align-items: center;
 }
-.add input {
+.add :deep(.el-input) {
   flex: 1;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-input);
-  color: var(--fg);
-  font-size: 12px;
 }
-.add select {
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-input);
-  color: var(--fg);
+.scope-select {
+  width: 140px;
 }
 .plugin-groups {
   display: flex;
@@ -205,14 +225,17 @@ async function remove(p: PluginInfo) {
   color: var(--fg-dim);
   font-size: 12px;
 }
-.plist li button {
+.pswitch {
+  grid-column: 2;
   grid-row: 1;
 }
-.plist li button:nth-of-type(1) {
-  grid-column: 2;
-}
-.plist li button:nth-of-type(2) {
+.pdel {
   grid-column: 3;
+  grid-row: 1;
+  color: var(--fg-dim);
+}
+.pdel:hover {
+  color: var(--danger);
 }
 .empty {
   color: var(--fg-dim);
