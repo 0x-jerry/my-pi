@@ -24,14 +24,17 @@ WebSocket**; the app package is a thin shell with no business logic.
    table (see §8), never in `~/.pi/agent/auth.json` (which is left untouched; no
    migration of existing keys — users re-enter them in the app).
 
-## 2. Current state (verified 2025-08, HEAD `2458271`)
+## 2. Current state (verified 2025-08, HEAD `b3b7bc4`)
 
-- Monorepo: Bun workspaces `packages/{shared,agent,core,app}`. **`shared`, `agent`,
-  `core` are complete and green** — `bun run check` (tsc --noEmit) passes in all
-  three; `bun run test` passes **80 tests, 0 fail** (shared 14 / agent 13 / core 53).
-- `packages/app` is still the **ElectroBun + Vue 3 demo counter**: `src/bun/index.ts`
-  only opens a BrowserWindow (no `CoreApp`), `src/mainview/App.vue` is the demo UI.
-  `packages/app/package.json` does **not** depend on `@my-pi/core`/`@my-pi/shared` yet.
+- Monorepo: Bun workspaces `packages/{shared,agent,core,app}`. **All four packages are
+  complete and green** — `bun run check` passes (shared/agent/core via `tsc --noEmit`,
+  app via `vue-tsc --noEmit`); `bun run test` passes **123 tests, 0 fail**
+  (shared 14 / agent 13 / core 53 / app 43).
+- `packages/app` is the **complete shell + Vue UI**: `src/bun/index.ts` boots
+  `CoreApp` and delivers the WS config to the view (query params on the dev URL,
+  `executeJavascript` injection of `window.__MY_PI_WS_CONFIG__` for `views://`);
+  `src/mainview/` holds the full frontend (see §3.1). `check` = `vue-tsc --noEmit`,
+  `test` = `vitest run` (jsdom + @vue/test-utils). Depends on `@my-pi/core`/`@my-pi/shared`.
 - Core's public surface (`packages/core/src/index.ts`): `CoreApp.create(options)` with
   `{ dbPath, wsHost, wsPort, wsToken, wsAllowedOrigin }`; exposes `wsPort`, `wsToken`.
   DB default `~/.my-pi/my-pi.db` (env `MY_PI_DB_PATH`), WAL, `user_version` migrations
@@ -44,8 +47,8 @@ WebSocket**; the app package is a thin shell with no business logic.
 - E2E smoke scripts exist: `scripts/smoke.ts` (RPC round-trip), `scripts/agent-smoke.ts`
   (real model run), `scripts/creds-smoke.ts` (login→persist→restart→logout).
 
-**What remains:** app shell wiring (§4 Step 6), the entire Vue UI (§4 Step 7), a
-pool-level concurrency test (§4 Step 8), hardening + README (§4 Step 9).
+**What remains:** pool-level concurrency test + manual dual-chat (§4 Step 8),
+hardening + README + final gate (§4 Step 9).
 
 ## 3. Architecture
 
@@ -55,9 +58,11 @@ pool-level concurrency test (§4 Step 8), hardening + README (§4 Step 9).
 packages/
   shared/  NEW (done). Protocol types/helpers + DTOs shared by core (server) and
            app (client). No runtime deps.
-  app/     Thin ElectroBun shell (exists) + **all UI code** (Vue frontend in
-           src/mainview, incl. the JSON-RPC client wrapper). Backend here only boots
-           `CoreApp` (from core) and opens the BrowserWindow. NO business logic.
+  app/     DONE. Thin ElectroBun shell + **all UI code** (Vue frontend in
+           src/mainview: views/ + components/ + rpc/ + store.ts + utils/ + shims/,
+           incl. the JSON-RPC client wrapper). Backend here only boots `CoreApp`
+           (from core) and opens the BrowserWindow. NO business logic.
+           Tests: vitest + jsdom + @vue/test-utils in packages/app/test/.
   core/    DONE. All backend application code: sqlite data layer, workspace/session
            services, agent pool, event bus, persistence, plugin registry, model/auth
            service, settings, WebSocket JSON-RPC server.
@@ -67,7 +72,7 @@ packages/
 
 Dependency direction: `app → core → agent → @earendil-works/pi-coding-agent`.
 Shared DTOs + JSON-RPC protocol **types** live in `shared`; the JSON-RPC **client
-implementation** is UI-side code and lives in `app` (Step 7).
+implementation** is UI-side code and lives in `app` (done).
 
 ### 3.2 Data model (sqlite, WAL mode, `PRAGMA user_version` migrations, v2)
 
@@ -131,9 +136,14 @@ Vue view ──JSON-RPC 2.0 over WebSocket (subprotocol token)──▶ core (Co
                                               │    └─ SettingsService
                                               └── AgentPool ──▶ N × PiAgent (agent pkg) ──▶ pi SDK
 
-The app shell only starts `CoreApp` (which boots the WS server), appends the WS
-URL (`ws://127.0.0.1:<port>`) + token to the view URL, and opens the window. The
-view connects with its own JSON-RPC client (in `app`, built on `@my-pi/shared`).
+The app shell only starts `CoreApp` (which boots the WS server), delivers the WS
+endpoint + auth token to the view, and opens the window. Delivery: the dev-server
+URL (`http://localhost:5173`) gets `?ws=<port>&token=<secret>` (query params survive
+over HTTP); the packaged `views://` scheme resolves files by exact path and rejects
+**both** query strings and hash fragments, so the shell injects
+`window.__MY_PI_WS_CONFIG__` via `executeJavascript` (immediately and on
+`dom-ready`); the view polls for it for up to 8s. The view connects with its own
+JSON-RPC client (in `app`, built on `@my-pi/shared`).
 ```
 
 Event flow for one prompt: `chat.send(sessionId, text)` → SessionService → AgentPool →
@@ -142,71 +152,34 @@ suffix-diff + rollups) and the JSON-RPC broadcaster (notifications to the view).
 
 ## 4. Remaining steps (ordered, each independently verifiable)
 
-Effort: S ≤0.5d, M ≤1d, L ≤2d. (Steps 0–5 of the original plan — shared protocol,
+Effort: S ≤0.5d, M ≤1d, L ≤2d. (Steps 0–7 of the original plan — shared protocol,
 sqlite layer, core services, agent wrapper, pool/persistence, plugin service + RPC
-server, CoreApp — are **done**, see §8.)
+server, CoreApp, app shell wiring (Step 6), Vue UI (Step 7) — are **done**, see §8.)
 
-### Step 6 — App shell wiring  (S)
-- `packages/app/package.json` — add deps `"@my-pi/core": "workspace:*"`,
-  `"@my-pi/shared": "workspace:*"`; `bun install`.
-- `packages/app/src/bun/index.ts` — replace body:
-  - `const app = await CoreApp.create({ wsPort: 0 })` (db defaults to `~/.my-pi/my-pi.db`).
-  - Append `?ws=<app.wsPort>&token=<encodeURIComponent(app.wsToken)>` to the view URL
-    in **both** branches of `getMainViewUrl()` (dev-server URL and `views://` URL).
-    (Keep the `?ws`/`?token` as query params; the subprotocol remains the primary auth
-    transport — the query token is a fallback the server already supports. Keep the
-    URL itself free of the secret where possible.)
-  - Window: keep title/size; pass the modified URL to `BrowserWindow`.
-  - Process lifecycle: on SIGINT/SIGTERM `await app.dispose(); process.exit(0)`.
-- **Verify early (de-risks everything downstream):** `bun run dev` boots the window;
-  in the view, `new URLSearchParams(location.search)` yields `ws` + `token`;
-  `new WebSocket(wsUrl, token)` connects and a `workspaces.list` call round-trips
-  (temporary console.log / tiny test hook in the view). This proves query-param
-  survival on `views://` (dev uses `http://localhost:5173/...`, which definitely
-  works) and subprotocol auth inside the CEF webview.
+### Step 6 — App shell wiring  (S) — DONE
+Implemented (see §8). **Deviations from the plan text:** `views://` rejects **both**
+query params and hash fragments (verified empirically — the scheme handler resolves
+exact file paths), so the config is delivered via `executeJavascript`
+(`window.__MY_PI_WS_CONFIG__` on dom-ready + immediate inject + 8s view-side poll);
+the dev-server URL keeps `?ws=&token=` (verified working). Additional fixes that
+landed here: `vite.config.ts base: "./"` (relative assets so the packaged view
+resolves them under `views://`) and a `declare module "three"` shim (electrobun's
+`bun` API imports the untyped `three` package — pre-existing app `check` failure).
 
-### Step 7 — Vue frontend  (L)
-All under `packages/app/src/mainview/`, importing types from `@my-pi/shared` only.
-
-- `rpc/client.ts` — `RpcClient`: `call<T>(method, params)` (pending map keyed by
-  incrementing id; rejects on JSON-RPC error), `on(event, cb)` notification registry,
-  auto-reconnect with backoff (0.5s → 5s), `refreshAll()` callback invoked on
-  (re)connect so the store re-syncs, `close()`.
-- `store.ts` — reactive store + actions:
-  - State: `workspaces`, `activeWorkspaceId`, `sessions` (per workspace), `activeSessionId`,
-    `messages` (per session), per-session `streaming` (`{status, error, textBuf,
-    thinkingBuf, activeTool}`), last-run `usage`, `providers`, `models` (per provider),
-    `auth` (per provider), `plugins`, `settings`.
-  - Actions wrap the RPC methods above; after mutating calls that emit no event
-    (`sessions.create/delete/fork`, `plugins.*`, `settings.*`), refetch the affected
-    list (the server only pushes `workspace.updated`, `session.status/delta/tool_*/
-    message_end/run_end`).
-  - Notification handlers: `session.status` → status/error; `session.delta` → append
-    to text/thinking buffer (batch renders with `nextTick`); `session.tool_start/
-    update/end` → active tool state; `session.message_end` → append `StoredMessage`;
-    `session.run_end` → reconcile transcript (dedupe by `StoredMessage.id`
-    `m-<sid>-<seq>` — makes `message_end` + `run_end` idempotent), set usage, clear
-    streaming; `workspace.updated` → refetch workspaces.
-- Views (simple `ref`-based panel switching in `App.vue`; no vue-router for v1):
-  - `WorkspaceSidebar.vue` — create (name + dir path; surface validation errors),
-    list, open (set active + load sessions), remove (confirm; handles running sessions).
-  - `SessionList.vue` — sessions of the active workspace: status dot, title, token/cost
-    totals; create (title + model + thinking level); open; fork at message N; delete.
-  - `ChatView.vue` — message list (user / assistant text; collapsible thinking; tool
-    calls with name/args/result/error state; base64 images as data URIs); streaming
-    buffers appended live; input (send; steer/followUp wired to RPC, exposed as
-    secondary actions); abort button while running; footer with last-run usage.
-  - `ModelPicker.vue` — providers with auth status; pick provider → `models.available`;
-    choose model; API-key entry (`models.login`) + logout; used by session creation and
-    default-model setting.
-  - `PluginsPanel.vue` — `plugins.list(workspaceId)` + global; enable/disable; add by
-    path. Note in UI: enabling/disabling applies to sessions loaded **after** the
-    toggle (loader is built at agent load).
-  - `SettingsPanel.vue` — default model, default thinking level (`settings.get/set`).
-- `packages/app/package.json` — change `check` to `vue-tsc --noEmit` (tsc can't
-  type-check SFC bodies; vue-tsc is already a devDep).
-- Verify: `bun run --cwd packages/app check` and `vite build` pass; full manual
-  scenario checklist (§6) in dev mode.
+### Step 7 — Vue frontend  (L) — DONE
+Implemented as designed, with these notes:
+- Structure: `views/` (5 panels) + `components/ModelPicker.vue` + `rpc/client.ts` +
+  `store.ts` (mainview root) + `utils/{render,format}.ts` + `shims/` (d.ts files).
+- Tests: **vitest + jsdom + @vue/test-utils** (`packages/app/test/`, `vitest.config.ts`,
+  `"test": "vitest run"`); `check` is `vue-tsc --noEmit` (works with the tsgo fork).
+- Streaming: buffers accumulate per run; completed segments are frozen into
+  `StreamingState.parts` at tool boundaries so multi-assistant turns render
+  separately during streaming (reconciled by id at `run_end`).
+- Post-review hardening: `refreshAll()` re-syncs the active workspace sessions +
+  active session transcript on reconnect; notification handlers guard refetch
+  rejections into the error banner; `RpcClient` ignores late events on stale/
+  closed sockets; `deleteSession` evicts per-session state; session-list refetches
+  are debounced per-microtask; zero-usage re-settle can't clobber last-run usage.
 
 ### Step 8 — Parallel agents  (S)
 - `packages/core/src/agents/agent-pool.ts` — add optional `agentFactory` to
@@ -233,42 +206,55 @@ All under `packages/app/src/mainview/`, importing types from `@my-pi/shared` onl
 - Root `package.json` — extend `check` to include the app (`vue-tsc --noEmit`).
 - Verify: fresh-clone boot per README; full `bun install && bun run check && bun run test`.
 
-## 5. Risks & tricky parts (remaining work)
+## 5. Risks & tricky parts (status as of HEAD `b3b7bc4`; items 1–6 are resolved)
 
-1. **WS config reaching the view.** Query params on `views://` URLs are unverified —
-   **de-risk in Step 6** before building UI. Fallbacks if dropped: dev server URL
-   (works), or a fixed port + token file read by the view. Subprotocol auth
-   (`new WebSocket(url, token)`) must be confirmed inside the CEF webview; the
-   server already supports `?token=` as fallback.
-2. **Streaming render performance.** Deltas are coalesced ~50ms server-side; ChatView
-   should append to string buffers and flush with `nextTick` rather than re-rendering
-   full arrays per delta; transcripts can be long.
-3. **Store sync after mutations.** `sessions.create/delete/fork` and `plugins.*` /
-   `settings.*` return results but push no events (except `workspace.updated`) — the
-   UI must refetch after each mutation. `session.run_end` is the transcript reconcile
-   point; dedupe by message id.
-4. **Reconnect semantics.** On WS drop: backoff reconnect, `refreshAll()` on open,
-   surface "reconnecting" state; an in-flight `chat.send` must surface an error to the
-   user rather than silently dropping.
-5. **`tsc` can't check SFC bodies** — switch the app `check` script to `vue-tsc
-   --noEmit` (already a devDep); keep the `*.vue` shim for editor tooling.
-6. **Plugin toggles only affect newly loaded sessions** — loader config is fixed at
-   agent load in `AgentPool.load`; the PluginsPanel must say so (toggle = restart the
-   session) to avoid "why isn't my tool available" confusion.
+1. **WS config reaching the view — DONE.** De-risked empirically in Step 6: the
+   packaged `views://` scheme handler resolves files by exact path and rejects
+   **both** query params and hash fragments (empty response). Solved via
+   `executeJavascript` injection of `window.__MY_PI_WS_CONFIG__` (immediate +
+   dom-ready) with an 8s view-side poll; the dev-server URL keeps `?ws=&token=`
+   (verified). Subprotocol auth (`new WebSocket(url, token)`) is unchanged; the
+   in-webview round-trip still needs the interactive pass (see §6).
+2. **Streaming render performance — DONE.** Deltas are coalesced ~50ms server-side;
+   ChatView appends to string buffers (`textBuf`/`thinkingBuf`) and Vue batches
+   renders per tick. Completed segments are frozen into `StreamingState.parts` at
+   tool boundaries so multi-assistant turns render separately.
+3. **Store sync after mutations — DONE.** Refetch-after-mutation rules implemented
+   (workspaces.create included — it pushes no event); `run_end` reconciles the
+   transcript by stable `m-<sid>-<seq>` id (idempotent vs `message_end`).
+4. **Reconnect semantics — DONE.** Backoff reconnect (0.5s→5s) + `refreshAll()` on
+   open — which now also re-syncs the active workspace's sessions and the active
+   session's transcript (runs finishing while disconnected are recovered).
+   "reconnecting…" indicator in App.vue; in-flight `chat.send` fails fast with an
+   error banner.
+5. **`tsc` can't check SFC bodies — DONE.** App `check` is `vue-tsc --noEmit`
+   (works with the `typescript-native-bridge` tsgo fork). Added a `declare module
+   "three"` shim for electrobun's untyped `three` import (pre-existing failure).
+6. **Plugin toggles only affect newly loaded sessions — DONE.** PluginsPanel shows
+   the "restart the session" note (loader config fixed at agent load).
 7. **Large messages / images in sqlite.** `data_json` stores base64 as-is; ChatView
-   renders them as data URIs. Acceptable for v1; externalize blobs later.
+   renders them as data URIs. Acceptable for v1; externalize blobs later. (Open.)
 8. **Plaintext localhost WS.** Mitigated in core (127.0.0.1 bind, origin check,
-   random per-launch token, single-connection). Keep the token out of URLs where
-   possible (subprotocol preferred; `?token=` only as fallback).
-9. **Process lifecycle.** Ensure `app.dispose()` (stop agents, close WS, close db)
-   runs on window/app exit to avoid sqlite lock residue and orphan agent processes.
+   random per-launch token, single-connection). The dev URL carries `?token=` as a
+   documented fallback (fresh per-launch secret on a localhost socket); packaged
+   builds never put the token in the URL — they use the injection path. (Open.)
+9. **Process lifecycle — DONE (dev).** `app.dispose()` runs on SIGINT/SIGTERM
+   (agents stopped, WS closed, db closed). Window-close exits the process via
+   electrobun's `exitOnLastWindowClosed` without dispose — sqlite WAL recovers on
+   next open; agents are in-process (no orphans). Accepted for v1.
 
-## 6. Verification checklist (definition of done — remaining)
+## 6. Verification checklist (definition of done)
 
-- [ ] `bun run check` passes in all four packages (app via vue-tsc); `bun run test`
-      green (shared/agent/core).
-- [ ] App boots (`bun run dev` and `bun run dev:hmr`); view connects over WS with the
-      subprotocol token; a `workspaces.list` round-trip succeeds (workspaces render).
+Automated items marked [x] are verified by CI-style runs; the unmarked items are
+manual GUI scenarios that still need the interactive pass in dev mode.
+
+- [x] `bun run check` passes in all four packages (app via vue-tsc); `bun run test`
+      green — **123 tests, 0 fail** (shared 14 / agent 13 / core 53 / app 43).
+- [x] `vite build` passes; smoke scripts (`smoke`, `creds-smoke`) still run
+      (`agent-smoke` skips without model auth).
+- [ ] App boots (`bun run dev` / `dev:hmr`); view connects over WS with the
+      subprotocol token; a `workspaces.list` round-trip succeeds inside the webview
+      (shell boot + URL construction verified headlessly; in-webview round-trip pending).
 - [ ] Workspace create/open/remove from UI; non-directory paths rejected with an
       error surfaced in the UI.
 - [ ] Session create → ModelPicker shows providers + available models + auth status;
@@ -287,7 +273,7 @@ All under `packages/app/src/mainview/`, importing types from `@my-pi/shared` onl
 - [ ] No unhandled errors / clear UI state on: deleting a workspace with running
       sessions, plugin toggle while sessions run, WS drop mid-stream (reconnect +
       refetch).
-- [ ] README works on a fresh clone (`bun install` → boot); smoke scripts still run.
+- [ ] README works on a fresh clone (`bun install` → boot).
 
 ## 7. Explicitly out of scope (v1)
 
@@ -309,9 +295,11 @@ All under `packages/app/src/mainview/`, importing types from `@my-pi/shared` onl
 | `packages/shared` (`@my-pi/shared`) | JSON-RPC 2.0 protocol (`parseRpcMessage`, error codes, `RpcMethod`/`RpcEvent`, builders), DTOs (Workspace, SessionInfo, StoredMessage, TokenUsageRow, PluginInfo, Model/ProviderInfo…), PiAgentEvent/CoreEvent/InternalEvent unions | 14 tests |
 | `packages/agent` (`@my-pi/agent`) | `PiAgent` (createAgentSession wrapper: in-memory SessionManager, compaction off, message restore), `ModelService` (ModelRuntime wrapper + sqlite CredentialStore wiring), `buildResourceLoader` (noExtensions + app-managed plugin paths), pure event mapper + serializer, pi type re-exports (pi pinned 0.84.1) | 13 tests |
 | `packages/core` (`@my-pi/core`) | sqlite layer (WAL, v1→v2 migrations, no FK enforcement, chmod 0600; repos for workspaces/sessions/messages/token_usage/plugins/settings/credentials), `SqliteCredentialStore` (per-provider serialized async semantics), services (workspace/session incl. fork+resume/settings/plugin registry w/ builtin example), AgentPool (lazy load, resume, status transitions), PersistenceWriter (idempotent suffix-diff, token ledger, rollups), TranscriptReader, JsonRpcServer (Bun.serve ws, subprotocol/query token, origin check, -32601/-32700 errors), `registerRpcMethods`, `CoreApp` (create/dispose, broadcaster w/ 50ms delta coalescing, orchestration: removeWorkspace/deleteSession/fork/sendMessage) | 53 tests |
+| `packages/app` (`@my-pi/app`) | Step 6 shell: `CoreApp.create({wsPort: 0})`, WS config delivery (query params on dev URL; `executeJavascript` injection of `__MY_PI_WS_CONFIG__` on dom-ready for `views://`, which rejects query/hash), SIGINT/SIGTERM dispose, `base: "./"` + `three` shim. Step 7 UI (all in `src/mainview/`): `rpc/client.ts` (JSON-RPC over WS, pending map, notification registry, reconnect w/ backoff, injectable socket factory), `store.ts` (reactive store + actions; 8 notification handlers; refetch-after-mutation rules; idempotent `run_end` reconcile; reconnect re-sync in `refreshAll`; debounced session refetches; per-session state eviction), `utils/render.ts` (duck-typed renderer for opaque pi `data`: text/thinking/image/toolCall/toolResult) + `utils/format.ts`, views `WorkspaceSidebar`/`SessionList`/`ChatView` (streaming buffers + tool-boundary parts, steer/followUp/abort, usage footer, fork-at-message-N)/`PluginsPanel`/`SettingsPanel`, `components/ModelPicker`, `main.ts` (config resolution + poll). Tests: vitest + jsdom + @vue/test-utils (`test/rpc-client`, `test/store`, `test/chat-view`) | 43 tests; vue-tsc + vite build green |
 
-Total: **80 tests, 0 fail**; `tsc --noEmit` clean in shared/agent/core. E2E smokes
-`scripts/{smoke,agent-smoke,creds-smoke}.ts` run. Key bug caught by E2E: `CoreApp`
+Total: **123 tests, 0 fail**; `check` clean in all four packages. E2E smokes
+`scripts/{smoke,agent-smoke,creds-smoke}.ts` run (agent-smoke skips without model
+auth). Key bug caught by E2E: `CoreApp`
 field-initialized a second `EventBus` that shadowed the wired one (broadcaster/listeners
 would have missed all events) — fixed via dependency injection.
 
@@ -323,6 +311,7 @@ implementing pi-ai's `CredentialStore`; pi never touches `~/.pi/agent/auth.json`
 safe), `modify` returning `undefined` leaves entry unchanged, runtime-only keys never
 persisted, corrupt blob degrades to "no credential".
 
-**Not started (this plan's remaining steps):** app shell wiring (Step 6), Vue UI
-(Step 7), pool-level concurrency test + manual dual-chat (Step 8), hardening + README
-(Step 9).
+**Not started (this plan's remaining steps):** pool-level concurrency test + manual
+dual-chat (Step 8), hardening + README + final gate (Step 9). Manual GUI
+verification items in §6 are also still pending (steps 6–7 passed all automated
+checks but the interactive webview pass is outstanding).
