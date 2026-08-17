@@ -2,7 +2,7 @@ import { reactive } from "vue"
 import { describe, expect, test, vi } from "vitest"
 import { mount } from "@vue/test-utils"
 import ElementPlus from "element-plus"
-import ChatView from "../src/mainview/views/ChatView.vue"
+import ChatView from "../src/mainview/components/ChatView.vue"
 import { StoreKey } from "../src/mainview/store"
 import type { SessionInfo, StoredMessage } from "@my-pi/shared"
 

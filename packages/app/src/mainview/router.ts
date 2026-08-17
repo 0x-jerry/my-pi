@@ -1,13 +1,13 @@
 import { createMemoryHistory, createRouter, type RouteRecordRaw } from "vue-router"
-import ChatPage from "./views/ChatPage.vue"
-import PluginsPanel from "./views/PluginsPanel.vue"
-import SettingsPanel from "./views/SettingsPanel.vue"
+import HomePage from "./views/HomePage.vue"
+import SettingsPage from "./views/SettingsPage.vue"
 
 export const routes: RouteRecordRaw[] = [
-  { path: "/", redirect: "/chat" },
-  { path: "/chat", name: "chat", component: ChatPage, meta: { title: "Chat" } },
-  { path: "/plugins", name: "plugins", component: PluginsPanel, meta: { title: "Plugins" } },
-  { path: "/settings", name: "settings", component: SettingsPanel, meta: { title: "Settings" } },
+  { path: "/", name: "home", component: HomePage, meta: { title: "Home" } },
+  { path: "/settings", name: "settings", component: SettingsPage, meta: { title: "Settings" } },
+  // Legacy paths (pre-layout-refactor): keep working for safety.
+  { path: "/chat", redirect: "/" },
+  { path: "/plugins", redirect: "/settings" },
 ]
 
 /**

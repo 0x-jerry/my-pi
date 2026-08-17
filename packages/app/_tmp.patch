@@ -1,0 +1,1265 @@
+diff --git a/packages/app/src/mainview/App.vue b/packages/app/src/mainview/App.vue
+index 663ad8a..0c69f47 100644
+--- a/packages/app/src/mainview/App.vue
++++ b/packages/app/src/mainview/App.vue
+@@ -1,32 +1,8 @@
+ <script setup lang="ts">
+-import { computed } from "vue"
+-import { useRoute, useRouter } from "vue-router"
+-import IconAiChat from "~icons/hugeicons/ai-chat-01"
+-import IconPuzzle from "~icons/hugeicons/puzzle"
+-import IconSettings from "~icons/hugeicons/settings-01"
+-import WorkspaceTree from "./components/WorkspaceTree.vue"
++import NavRail from "./components/NavRail.vue"
+ import { useStore } from "./store"
+ 
+ const store = useStore()
+-const route = useRoute()
+-const router = useRouter()
+-
+-const connectionLabel = computed(() => {
+-  switch (store.state.connectionState) {
+-    case "connected":
+-      return ""
+-    case "reconnecting":
+-      return "Reconnecting…"
+-    case "connecting":
+-      return "Connecting…"
+-    default:
+-      return "Offline"
+-  }
+-})
+-
+-function onTabChange(path: unknown) {
+-  if (typeof path === "string") void router.push(path)
+-}
+ </script>
+ 
+ <template>
+@@ -40,36 +16,9 @@ function onTabChange(path: unknown) {
+       {{ store.state.error }}
+     </el-alert>
+ 
+-    <WorkspaceTree />
+-
+-    <div v-if="store.state.activeWorkspaceId" class="main">
+-      <header class="main-head">
+-          <el-radio-group :model-value="route.path" class="tabs" @change="onTabChange">
+-            <el-radio-button value="/chat">
+-              <el-icon><IconAiChat /></el-icon>
+-              <span>Chat</span>
+-            </el-radio-button>
+-            <el-radio-button value="/plugins">
+-              <el-icon><IconPuzzle /></el-icon>
+-              <span>Plugins</span>
+-            </el-radio-button>
+-            <el-radio-button value="/settings">
+-              <el-icon><IconSettings /></el-icon>
+-              <span>Settings</span>
+-            </el-radio-button>
+-          </el-radio-group>
+-          <span v-if="connectionLabel" class="conn" :class="store.state.connectionState">
+-            <span class="conn-dot" :class="store.state.connectionState" />
+-            {{ connectionLabel }}
+-          </span>
+-        </header>
+-
+-        <router-view />
+-    </div>
++    <NavRail />
+ 
+-    <div v-else class="no-workspace">
+-      <el-empty description="Open or create a workspace to begin." :image-size="96" />
+-    </div>
++    <router-view />
+   </div>
+ </template>
+ 
+@@ -86,53 +35,4 @@ function onTabChange(path: unknown) {
+   right: 0;
+   z-index: 10;
+ }
+-.main {
+-  flex: 1;
+-  display: flex;
+-  flex-direction: column;
+-  min-width: 0;
+-}
+-.main-head {
+-  display: flex;
+-  align-items: center;
+-  justify-content: space-between;
+-  padding: 6px 12px;
+-  border-bottom: 1px solid var(--border);
+-  background: var(--bg-panel);
+-}
+-.tabs {
+-  display: flex;
+-}
+-.tabs :deep(.el-radio-button__inner) {
+-  display: inline-flex;
+-  align-items: center;
+-  gap: 4px;
+-}
+-.conn {
+-  display: inline-flex;
+-  align-items: center;
+-  gap: 6px;
+-  font-size: 12px;
+-  color: var(--fg-dim);
+-}
+-.conn-dot {
+-  width: 8px;
+-  height: 8px;
+-  border-radius: 50%;
+-  background: var(--fg-dim);
+-}
+-.conn-dot.connecting,
+-.conn-dot.reconnecting {
+-  background: var(--warn);
+-}
+-.conn.connecting,
+-.conn.reconnecting {
+-  color: var(--warn);
+-}
+-.no-workspace {
+-  flex: 1;
+-  display: flex;
+-  align-items: center;
+-  justify-content: center;
+-}
+ </style>
+diff --git a/packages/app/src/mainview/components/NavRail.vue b/packages/app/src/mainview/components/NavRail.vue
+new file mode 100644
+index 0000000..38f91d5
+--- /dev/null
++++ b/packages/app/src/mainview/components/NavRail.vue
+@@ -0,0 +1,136 @@
++<script setup lang="ts">
++import { computed } from "vue"
++import { useRoute, useRouter } from "vue-router"
++import IconFolder from "~icons/hugeicons/folder-01"
++import IconSettings from "~icons/hugeicons/settings-01"
++import { useStore } from "../store"
++
++const store = useStore()
++const route = useRoute()
++const router = useRouter()
++
++/** Logo "Pi" color mirrors the connection state (see store connectionState). */
++const logoClass = computed(() => {
++  switch (store.state.connectionState) {
++    case "connected":
++      return "logo-ok"
++    case "connecting":
++    case "reconnecting":
++      return "logo-warn"
++    default:
++      return "logo-offline"
++  }
++})
++
++function isActive(name: string): boolean {
++  return route.name === name
++}
++
++function go(path: string) {
++  void router.push(path)
++}
++</script>
++
++<template>
++  <nav class="rail">
++    <button class="logo" :class="logoClass" title="Pi" @click="go('/')">Pi</button>
++
++    <div class="rail-items">
++      <button
++        class="rail-btn"
++        :class="{ active: isActive('home') }"
++        title="Workspace"
++        @click="go('/')"
++      >
++        <el-icon class="rail-icon"><IconFolder /></el-icon>
++        <span class="rail-label">Workspace</span>
++      </button>
++    </div>
++
++    <div class="rail-spacer" />
++
++    <button
++      class="rail-btn"
++      :class="{ active: isActive('settings') }"
++      title="Settings"
++      @click="go('/settings')"
++    >
++      <el-icon class="rail-icon"><IconSettings /></el-icon>
++      <span class="rail-label">Settings</span>
++    </button>
++  </nav>
++</template>
++
++<style scoped>
++.rail {
++  width: 96px;
++  flex-shrink: 0;
++  height: 100%;
++  border-right: 1px solid var(--border);
++  background: var(--bg-panel);
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 8px;
++  padding: 12px 8px;
++  user-select: none;
++}
++.logo {
++  border: none;
++  background: transparent;
++  font-size: 22px;
++  font-weight: 700;
++  letter-spacing: 0.02em;
++  cursor: pointer;
++  padding: 4px 8px;
++  font-family: inherit;
++  transition: color 0.2s ease;
++}
++.logo-ok {
++  color: var(--ok);
++}
++.logo-warn {
++  color: var(--warn);
++}
++.logo-offline {
++  color: var(--fg-dim);
++}
++.rail-items {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  width: 100%;
++}
++.rail-spacer {
++  flex: 1;
++}
++.rail-btn {
++  width: 100%;
++  display: flex;
++  flex-direction: column;
++  align-items: center;
++  gap: 4px;
++  padding: 8px 4px;
++  border: 1px solid transparent;
++  border-radius: 8px;
++  background: transparent;
++  color: var(--fg-dim);
++  cursor: pointer;
++  font-family: inherit;
++  font-size: 11px;
++}
++.rail-btn:hover {
++  background: var(--bg-hover);
++}
++.rail-btn.active {
++  border-color: var(--accent);
++  background: var(--bg-active);
++  color: var(--accent);
++}
++.rail-btn.active .rail-label {
++  color: var(--accent);
++}
++.rail-icon {
++  font-size: 20px;
++}
++</style>
+diff --git a/packages/app/src/mainview/router.ts b/packages/app/src/mainview/router.ts
+index 19fd8d8..8678b8e 100644
+--- a/packages/app/src/mainview/router.ts
++++ b/packages/app/src/mainview/router.ts
+@@ -1,13 +1,13 @@
+ import { createMemoryHistory, createRouter, type RouteRecordRaw } from "vue-router"
+-import ChatPage from "./views/ChatPage.vue"
+-import PluginsPanel from "./views/PluginsPanel.vue"
+-import SettingsPanel from "./views/SettingsPanel.vue"
++import HomePage from "./views/HomePage.vue"
++import SettingsPage from "./views/SettingsPage.vue"
+ 
+ export const routes: RouteRecordRaw[] = [
+-  { path: "/", redirect: "/chat" },
+-  { path: "/chat", name: "chat", component: ChatPage, meta: { title: "Chat" } },
+-  { path: "/plugins", name: "plugins", component: PluginsPanel, meta: { title: "Plugins" } },
+-  { path: "/settings", name: "settings", component: SettingsPanel, meta: { title: "Settings" } },
++  { path: "/", name: "home", component: HomePage, meta: { title: "Home" } },
++  { path: "/settings", name: "settings", component: SettingsPage, meta: { title: "Settings" } },
++  // Legacy paths (pre-layout-refactor): keep working for safety.
++  { path: "/chat", redirect: "/" },
++  { path: "/plugins", redirect: "/settings" },
+ ]
+ 
+ /**
+diff --git a/packages/app/src/mainview/views/HomePage.vue b/packages/app/src/mainview/views/HomePage.vue
+new file mode 100644
+index 0000000..210f288
+--- /dev/null
++++ b/packages/app/src/mainview/views/HomePage.vue
+@@ -0,0 +1,39 @@
++<script setup lang="ts">
++import WorkspaceTree from "../components/WorkspaceTree.vue"
++import ChatPage from "./ChatPage.vue"
++import { useStore } from "../store"
++
++const store = useStore()
++</script>
++
++<template>
++  <div v-if="store.state.activeWorkspaceId" class="home">
++    <WorkspaceTree />
++    <main class="content">
++      <ChatPage />
++    </main>
++  </div>
++  <div v-else class="no-workspace">
++    <el-empty description="Open or create a workspace to begin." :image-size="96" />
++  </div>
++</template>
++
++<style scoped>
++.home {
++  flex: 1;
++  display: flex;
++  min-width: 0;
++}
++.content {
++  flex: 1;
++  display: flex;
++  flex-direction: column;
++  min-width: 0;
++}
++.no-workspace {
++  flex: 1;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++}
++</style>
+diff --git a/packages/app/src/mainview/views/PluginsPanel.vue b/packages/app/src/mainview/views/PluginsPanel.vue
+deleted file mode 100644
+index eefd083..0000000
+--- a/packages/app/src/mainview/views/PluginsPanel.vue
++++ /dev/null
+@@ -1,244 +0,0 @@
+-<script setup lang="ts">
+-import { computed, ref } from "vue"
+-import { ElMessage, ElMessageBox } from "element-plus"
+-import type { PluginInfo } from "@my-pi/shared"
+-import IconPlus from "~icons/hugeicons/plus-sign"
+-import IconDelete from "~icons/hugeicons/delete-01"
+-import { useStore } from "../store"
+-
+-const store = useStore()
+-
+-const path = ref("")
+-const scope = ref<"global" | "workspace">("global")
+-const adding = ref(false)
+-
+-// Always mirror store state (which refreshes on connect/reconnect and after
+-// every mutation) instead of keeping private copies that can go stale.
+-const globalPlugins = computed(() =>
+-  store.state.pluginsGlobal.filter((p) => p.scope === "global"),
+-)
+-const workspacePlugins = computed(() => {
+-  const wsId = store.state.activeWorkspaceId
+-  return wsId
+-    ? (store.state.pluginsWorkspace[wsId] ?? []).filter((p) => p.scope === "workspace")
+-    : []
+-})
+-
+-async function add() {
+-  if (!path.value.trim()) {
+-    ElMessage.warning("Plugin path is required")
+-    return
+-  }
+-  adding.value = true
+-  try {
+-    await store.addPlugin({
+-      source: path.value.trim(),
+-      scope: scope.value,
+-      workspaceId:
+-        scope.value === "workspace" ? (store.state.activeWorkspaceId ?? undefined) : undefined,
+-    })
+-    path.value = ""
+-  } catch (err) {
+-    ElMessage.error(err instanceof Error ? err.message : String(err))
+-  } finally {
+-    adding.value = false
+-  }
+-}
+-
+-async function toggle(p: PluginInfo, enabled: boolean) {
+-  try {
+-    await store.setPluginEnabled(p.id, enabled)
+-  } catch (err) {
+-    ElMessage.error(err instanceof Error ? err.message : String(err))
+-  }
+-}
+-
+-function toggleSwitch(p: PluginInfo, value: unknown) {
+-  void toggle(p, Boolean(value))
+-}
+-
+-async function remove(p: PluginInfo) {
+-  try {
+-    await ElMessageBox.confirm(`Remove plugin "${p.name}"?`, "Remove plugin", {
+-      type: "warning",
+-      confirmButtonText: "Remove",
+-      cancelButtonText: "Cancel",
+-    })
+-  } catch {
+-    return // dismissed
+-  }
+-  try {
+-    await store.removePlugin(p.id)
+-  } catch (err) {
+-    ElMessage.error(err instanceof Error ? err.message : String(err))
+-  }
+-}
+-</script>
+-
+-<template>
+-  <section class="panel">
+-    <h2>Plugins</h2>
+-    <p class="note">
+-      Enabling/disabling applies to sessions loaded <strong>after</strong> the
+-      toggle — restart the session (send a message again) to pick up changes.
+-    </p>
+-
+-    <form class="add" @submit.prevent="add">
+-      <el-input v-model="path" placeholder="/absolute/path/to/plugin" clearable />
+-      <el-select v-model="scope" class="scope-select">
+-        <el-option label="global" value="global" />
+-        <el-option label="workspace" value="workspace" />
+-      </el-select>
+-      <el-button type="primary" native-type="submit" :loading="adding">
+-        <el-icon v-if="!adding"><IconPlus /></el-icon>
+-        <span>{{ adding ? "Adding…" : "Add by path" }}</span>
+-      </el-button>
+-    </form>
+-
+-    <div class="plugin-groups">
+-      <div class="group">
+-        <h3>Global</h3>
+-        <ul class="plist">
+-          <li v-for="p in globalPlugins" :key="p.id">
+-            <span class="pname">{{ p.name }}</span>
+-            <span class="psrc">{{ p.source }}</span>
+-            <span class="pdesc">{{ p.description }}</span>
+-            <el-switch
+-              :model-value="p.enabled"
+-              inline-prompt
+-              active-text="on"
+-              inactive-text="off"
+-              class="pswitch"
+-              @change="toggleSwitch(p, $event)"
+-            />
+-            <el-tooltip content="Remove plugin" placement="top">
+-              <el-button
+-                text
+-                circle
+-                class="pdel"
+-                :icon="IconDelete"
+-                @click="remove(p)"
+-              />
+-            </el-tooltip>
+-          </li>
+-          <li v-if="globalPlugins.length === 0" class="empty">—</li>
+-        </ul>
+-      </div>
+-
+-      <div v-if="store.state.activeWorkspaceId" class="group">
+-        <h3>Workspace ({{ store.state.activeWorkspaceId.slice(0, 8) }})</h3>
+-        <ul class="plist">
+-          <li v-for="p in workspacePlugins" :key="p.id">
+-            <span class="pname">{{ p.name }}</span>
+-            <span class="psrc">{{ p.source }}</span>
+-            <span class="pdesc">{{ p.description }}</span>
+-            <el-switch
+-              :model-value="p.enabled"
+-              inline-prompt
+-              active-text="on"
+-              inactive-text="off"
+-              class="pswitch"
+-              @change="toggleSwitch(p, $event)"
+-            />
+-            <el-tooltip content="Remove plugin" placement="top">
+-              <el-button
+-                text
+-                circle
+-                class="pdel"
+-                :icon="IconDelete"
+-                @click="remove(p)"
+-              />
+-            </el-tooltip>
+-          </li>
+-          <li v-if="workspacePlugins.length === 0" class="empty">—</li>
+-        </ul>
+-      </div>
+-    </div>
+-  </section>
+-</template>
+-
+-<style scoped>
+-.panel {
+-  padding: 16px;
+-  overflow-y: auto;
+-}
+-.panel h2 {
+-  margin: 0 0 6px;
+-  font-size: 17px;
+-}
+-.note {
+-  color: var(--fg-dim);
+-  font-size: 12px;
+-  margin: 0;
+-}
+-.add {
+-  display: flex;
+-  gap: 8px;
+-  margin: 12px 0;
+-  align-items: center;
+-}
+-.add :deep(.el-input) {
+-  flex: 1;
+-}
+-.scope-select {
+-  width: 140px;
+-}
+-.plugin-groups {
+-  display: flex;
+-  flex-direction: column;
+-  gap: 16px;
+-}
+-.group h3 {
+-  font-size: 13px;
+-  color: var(--fg-dim);
+-  margin: 0 0 6px;
+-}
+-.plist {
+-  list-style: none;
+-  margin: 0;
+-  padding: 0;
+-  display: flex;
+-  flex-direction: column;
+-  gap: 6px;
+-}
+-.plist li {
+-  display: grid;
+-  grid-template-columns: 1fr auto auto;
+-  gap: 4px 10px;
+-  align-items: center;
+-  border: 1px solid var(--border);
+-  border-radius: 8px;
+-  padding: 8px 10px;
+-}
+-.pname {
+-  font-weight: 600;
+-  font-size: 13px;
+-}
+-.psrc {
+-  grid-column: 1;
+-  color: var(--fg-dim);
+-  font-size: 11px;
+-  word-break: break-all;
+-}
+-.pdesc {
+-  grid-column: 1;
+-  color: var(--fg-dim);
+-  font-size: 12px;
+-}
+-.pswitch {
+-  grid-column: 2;
+-  grid-row: 1;
+-}
+-.pdel {
+-  grid-column: 3;
+-  grid-row: 1;
+-  color: var(--fg-dim);
+-}
+-.pdel:hover {
+-  color: var(--danger);
+-}
+-.empty {
+-  color: var(--fg-dim);
+-  font-size: 12px;
+-}
+-</style>
+diff --git a/packages/app/src/mainview/views/SettingsPage.vue b/packages/app/src/mainview/views/SettingsPage.vue
+new file mode 100644
+index 0000000..ce23bd3
+--- /dev/null
++++ b/packages/app/src/mainview/views/SettingsPage.vue
+@@ -0,0 +1,516 @@
++<script setup lang="ts">
++import { computed, ref } from "vue"
++import { ElMessage, ElMessageBox } from "element-plus"
++import type { PluginInfo, ProviderInfo, ThinkingLevel } from "@my-pi/shared"
++import ModelPicker from "../components/ModelPicker.vue"
++import IconCheck from "~icons/hugeicons/checkmark-circle-01"
++import IconLogin from "~icons/hugeicons/login-01"
++import IconLogout from "~icons/hugeicons/logout-01"
++import IconPlus from "~icons/hugeicons/plus-sign"
++import IconDelete from "~icons/hugeicons/delete-01"
++import { useStore } from "../store"
++
++const store = useStore()
++
++// ---- app settings ----
++
++const THINKING_LEVELS: ThinkingLevel[] = [
++  "off",
++  "minimal",
++  "low",
++  "medium",
++  "high",
++  "xhigh",
++  "max",
++]
++
++// el-select can't hold undefined as a selectable option value — the "default"
++// choice is a sentinel string mapped to undefined at the API edge.
++const THINKING_DEFAULT = "__default__"
++
++const model = ref<{ provider: string; id: string } | null>(
++  (store.state.settings.defaultModel as { provider: string; id: string } | undefined) ?? null,
++)
++const thinking = ref<string>(
++  (store.state.settings.defaultThinkingLevel as ThinkingLevel | undefined) ??
++    THINKING_DEFAULT,
++)
++const saving = ref(false)
++
++async function saveModel() {
++  if (!model.value) return
++  saving.value = true
++  try {
++    await store.setDefaultModel(model.value)
++    ElMessage.success("Default model saved")
++  } catch (err) {
++    ElMessage.error(err instanceof Error ? err.message : String(err))
++  } finally {
++    saving.value = false
++  }
++}
++
++async function saveThinking() {
++  if (thinking.value === THINKING_DEFAULT) return
++  saving.value = true
++  try {
++    await store.setDefaultThinkingLevel(thinking.value as ThinkingLevel)
++    ElMessage.success("Thinking level saved")
++  } catch (err) {
++    ElMessage.error(err instanceof Error ? err.message : String(err))
++  } finally {
++    saving.value = false
++  }
++}
++
++// ---- auth ----
++
++const providerKey = ref<Record<string, string>>({})
++const authBusy = ref<Record<string, boolean>>({})
++const authError = ref<Record<string, string | null>>({})
++
++// Providers are refreshed on connect/reconnect, so mirror store state.
++const providers = computed(() => store.state.providers)
++
++function authStatus(p: ProviderInfo): string {
++  return p.authConfigured ? "configured" : "not configured"
++}
++
++async function login(p: ProviderInfo) {
++  const apiKey = (providerKey.value[p.id] ?? "").trim()
++  if (!apiKey) {
++    ElMessage.warning("Enter an API key first")
++    return
++  }
++  authBusy.value[p.id] = true
++  authError.value[p.id] = null
++  try {
++    await store.loginApiKey(p.id, apiKey)
++    providerKey.value[p.id] = "" // never carry the key across logins
++    ElMessage.success(`${p.name} authenticated`)
++  } catch (err) {
++    authError.value[p.id] = err instanceof Error ? err.message : String(err)
++  } finally {
++    authBusy.value[p.id] = false
++  }
++}
++
++async function logout(p: ProviderInfo) {
++  authBusy.value[p.id] = true
++  authError.value[p.id] = null
++  try {
++    await store.logout(p.id)
++    ElMessage.success(`${p.name} logged out`)
++  } catch (err) {
++    authError.value[p.id] = err instanceof Error ? err.message : String(err)
++  } finally {
++    authBusy.value[p.id] = false
++  }
++}
++
++// ---- plugins ----
++
++const path = ref("")
++const scope = ref<"global" | "workspace">("global")
++const adding = ref(false)
++
++const globalPlugins = computed(() =>
++  store.state.pluginsGlobal.filter((p) => p.scope === "global"),
++)
++const workspacePlugins = computed(() => {
++  const wsId = store.state.activeWorkspaceId
++  return wsId
++    ? (store.state.pluginsWorkspace[wsId] ?? []).filter((p) => p.scope === "workspace")
++    : []
++})
++
++async function addPlugin() {
++  if (!path.value.trim()) {
++    ElMessage.warning("Plugin path is required")
++    return
++  }
++  adding.value = true
++  try {
++    await store.addPlugin({
++      source: path.value.trim(),
++      scope: scope.value,
++      workspaceId:
++        scope.value === "workspace" ? (store.state.activeWorkspaceId ?? undefined) : undefined,
++    })
++    path.value = ""
++  } catch (err) {
++    ElMessage.error(err instanceof Error ? err.message : String(err))
++  } finally {
++    adding.value = false
++  }
++}
++
++async function togglePlugin(p: PluginInfo, enabled: boolean) {
++  try {
++    await store.setPluginEnabled(p.id, enabled)
++  } catch (err) {
++    ElMessage.error(err instanceof Error ? err.message : String(err))
++  }
++}
++
++function onToggleSwitch(p: PluginInfo, value: unknown) {
++  void togglePlugin(p, Boolean(value))
++}
++
++async function removePlugin(p: PluginInfo) {
++  try {
++    await ElMessageBox.confirm(`Remove plugin "${p.name}"?`, "Remove plugin", {
++      type: "warning",
++      confirmButtonText: "Remove",
++      cancelButtonText: "Cancel",
++    })
++  } catch {
++    return // dismissed
++  }
++  try {
++    await store.removePlugin(p.id)
++  } catch (err) {
++    ElMessage.error(err instanceof Error ? err.message : String(err))
++  }
++}
++</script>
++
++<template>
++  <section class="page">
++    <h2 class="page-title">Settings</h2>
++
++    <!-- Auth -->
++    <div class="setting">
++      <h3>Authentication</h3>
++      <p class="note">
++        Configure provider credentials so models can be used. Each provider is
++        authenticated independently.
++      </p>
++      <div class="auth-list">
++        <div v-for="p in providers" :key="p.id" class="auth-row">
++          <div class="auth-info">
++            <span class="auth-name">{{ p.name }}</span>
++            <el-tag
++              size="small"
++              effect="plain"
++              :type="p.authConfigured ? 'success' : 'info'"
++            >
++              {{ authStatus(p) }}
++            </el-tag>
++          </div>
++          <div class="auth-controls">
++            <el-input
++              v-model="providerKey[p.id]"
++              type="password"
++              show-password
++              placeholder="API key (sk-…)"
++              class="auth-key"
++              :disabled="p.authConfigured"
++              @keydown.enter="login(p)"
++            />
++            <el-button
++              type="primary"
++              :disabled="p.authConfigured || !providerKey[p.id]"
++              :loading="authBusy[p.id]"
++              :icon="IconLogin"
++              @click="login(p)"
++            >
++              Login
++            </el-button>
++            <el-button
++              :disabled="!p.authConfigured"
++              text
++              :loading="authBusy[p.id]"
++              :icon="IconLogout"
++              @click="logout(p)"
++            >
++              Logout
++            </el-button>
++          </div>
++          <el-alert
++            v-if="authError[p.id]"
++            type="error"
++            :closable="false"
++            show-icon
++            class="auth-err"
++          >
++            {{ authError[p.id] }}
++          </el-alert>
++        </div>
++        <p v-if="providers.length === 0" class="note">No providers available.</p>
++      </div>
++    </div>
++
++    <!-- App settings -->
++    <div class="setting">
++      <h3>Defaults</h3>
++      <p class="note">Defaults used when creating new sessions.</p>
++
++      <div class="setting-item">
++        <span class="setting-label">Default model</span>
++        <ModelPicker v-model="model" />
++        <el-button
++          type="primary"
++          :disabled="!model || saving"
++          :icon="IconCheck"
++          @click="saveModel"
++        >
++          Save default model
++        </el-button>
++      </div>
++
++      <div class="setting-item">
++        <span class="setting-label">Default thinking level</span>
++        <el-select v-model="thinking" class="level-select" filterable>
++          <el-option label="— default —" :value="THINKING_DEFAULT" />
++          <el-option v-for="l in THINKING_LEVELS" :key="l" :label="l" :value="l" />
++        </el-select>
++        <el-button
++          type="primary"
++          :disabled="thinking === THINKING_DEFAULT || saving"
++          :icon="IconCheck"
++          @click="saveThinking"
++        >
++          Save thinking level
++        </el-button>
++      </div>
++    </div>
++
++    <!-- Plugins -->
++    <div class="setting">
++      <h3>Plugins</h3>
++      <p class="note">
++        Enabling/disabling applies to sessions loaded <strong>after</strong> the
++        toggle — restart the session (send a message again) to pick up changes.
++      </p>
++
++      <form class="plugin-add" @submit.prevent="addPlugin">
++        <el-input v-model="path" placeholder="/absolute/path/to/plugin" clearable />
++        <el-select v-model="scope" class="scope-select">
++          <el-option label="global" value="global" />
++          <el-option label="workspace" value="workspace" />
++        </el-select>
++        <el-button type="primary" native-type="submit" :loading="adding">
++          <el-icon v-if="!adding"><IconPlus /></el-icon>
++          <span>{{ adding ? "Adding…" : "Add by path" }}</span>
++        </el-button>
++      </form>
++
++      <div class="plugin-groups">
++        <div class="group">
++          <h4>Global</h4>
++          <ul class="plist">
++            <li v-for="p in globalPlugins" :key="p.id">
++              <span class="pname">{{ p.name }}</span>
++              <span class="psrc">{{ p.source }}</span>
++              <span class="pdesc">{{ p.description }}</span>
++              <el-switch
++                :model-value="p.enabled"
++                inline-prompt
++                active-text="on"
++                inactive-text="off"
++                class="pswitch"
++                @change="onToggleSwitch(p, $event)"
++              />
++              <el-tooltip content="Remove plugin" placement="top">
++                <el-button
++                  text
++                  circle
++                  class="pdel"
++                  :icon="IconDelete"
++                  @click="removePlugin(p)"
++                />
++              </el-tooltip>
++            </li>
++            <li v-if="globalPlugins.length === 0" class="empty">—</li>
++          </ul>
++        </div>
++
++        <div v-if="store.state.activeWorkspaceId" class="group">
++          <h4>Workspace ({{ store.state.activeWorkspaceId.slice(0, 8) }})</h4>
++          <ul class="plist">
++            <li v-for="p in workspacePlugins" :key="p.id">
++              <span class="pname">{{ p.name }}</span>
++              <span class="psrc">{{ p.source }}</span>
++              <span class="pdesc">{{ p.description }}</span>
++              <el-switch
++                :model-value="p.enabled"
++                inline-prompt
++                active-text="on"
++                inactive-text="off"
++                class="pswitch"
++                @change="onToggleSwitch(p, $event)"
++              />
++              <el-tooltip content="Remove plugin" placement="top">
++                <el-button
++                  text
++                  circle
++                  class="pdel"
++                  :icon="IconDelete"
++                  @click="removePlugin(p)"
++                />
++              </el-tooltip>
++            </li>
++            <li v-if="workspacePlugins.length === 0" class="empty">—</li>
++          </ul>
++        </div>
++      </div>
++    </div>
++  </section>
++</template>
++
++<style scoped>
++.page {
++  flex: 1;
++  padding: 16px;
++  overflow-y: auto;
++  display: flex;
++  flex-direction: column;
++  gap: 14px;
++  max-width: 760px;
++}
++.page-title {
++  margin: 0;
++  font-size: 17px;
++}
++.setting {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 14px;
++  background: var(--bg-panel);
++}
++.setting h3 {
++  margin: 0;
++  font-size: 15px;
++}
++.note {
++  color: var(--fg-dim);
++  font-size: 12px;
++  margin: 0;
++}
++.setting-item {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  flex-wrap: wrap;
++}
++.setting-label {
++  min-width: 150px;
++  color: var(--fg);
++  font-size: 13px;
++}
++.level-select {
++  width: 200px;
++}
++
++/* auth */
++.auth-list {
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
++}
++.auth-row {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 10px;
++}
++.auth-info {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++}
++.auth-name {
++  font-weight: 600;
++  font-size: 13px;
++}
++.auth-controls {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  flex-wrap: wrap;
++}
++.auth-key {
++  width: 260px;
++  max-width: 100%;
++}
++.auth-err {
++  margin: 0;
++}
++
++/* plugins */
++.plugin-add {
++  display: flex;
++  gap: 8px;
++  align-items: center;
++}
++.plugin-add :deep(.el-input) {
++  flex: 1;
++}
++.scope-select {
++  width: 140px;
++}
++.plugin-groups {
++  display: flex;
++  flex-direction: column;
++  gap: 12px;
++}
++.group h4 {
++  font-size: 13px;
++  color: var(--fg-dim);
++  margin: 0 0 6px;
++}
++.plist {
++  list-style: none;
++  margin: 0;
++  padding: 0;
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++}
++.plist li {
++  display: grid;
++  grid-template-columns: 1fr auto auto;
++  gap: 4px 10px;
++  align-items: center;
++  border: 1px solid var(--border);
++  border-radius: 8px;
++  padding: 8px 10px;
++}
++.pname {
++  font-weight: 600;
++  font-size: 13px;
++}
++.psrc {
++  grid-column: 1;
++  color: var(--fg-dim);
++  font-size: 11px;
++  word-break: break-all;
++}
++.pdesc {
++  grid-column: 1;
++  color: var(--fg-dim);
++  font-size: 12px;
++}
++.pswitch {
++  grid-column: 2;
++  grid-row: 1;
++}
++.pdel {
++  grid-column: 3;
++  grid-row: 1;
++  color: var(--fg-dim);
++}
++.pdel:hover {
++  color: var(--danger);
++}
++.empty {
++  color: var(--fg-dim);
++  font-size: 12px;
++}
++</style>
+diff --git a/packages/app/src/mainview/views/SettingsPanel.vue b/packages/app/src/mainview/views/SettingsPanel.vue
+deleted file mode 100644
+index 3ba07c5..0000000
+--- a/packages/app/src/mainview/views/SettingsPanel.vue
++++ /dev/null
+@@ -1,131 +0,0 @@
+-<script setup lang="ts">
+-import { ref } from "vue"
+-import { ElMessage } from "element-plus"
+-import type { ThinkingLevel } from "@my-pi/shared"
+-import ModelPicker from "../components/ModelPicker.vue"
+-import IconCheck from "~icons/hugeicons/checkmark-circle-01"
+-import { useStore } from "../store"
+-
+-const store = useStore()
+-
+-const THINKING_LEVELS: ThinkingLevel[] = [
+-  "off",
+-  "minimal",
+-  "low",
+-  "medium",
+-  "high",
+-  "xhigh",
+-  "max",
+-]
+-
+-// el-select can't hold undefined as a selectable option value — the "default"
+-// choice is a sentinel string mapped to undefined at the API edge.
+-const THINKING_DEFAULT = "__default__"
+-
+-const model = ref<{ provider: string; id: string } | null>(
+-  (store.state.settings.defaultModel as { provider: string; id: string } | undefined) ?? null,
+-)
+-const thinking = ref<string>(
+-  (store.state.settings.defaultThinkingLevel as ThinkingLevel | undefined) ??
+-    THINKING_DEFAULT,
+-)
+-const saving = ref(false)
+-
+-async function saveModel() {
+-  if (!model.value) return
+-  saving.value = true
+-  try {
+-    await store.setDefaultModel(model.value)
+-    ElMessage.success("Default model saved")
+-  } catch (err) {
+-    ElMessage.error(err instanceof Error ? err.message : String(err))
+-  } finally {
+-    saving.value = false
+-  }
+-}
+-
+-async function saveThinking() {
+-  if (thinking.value === THINKING_DEFAULT) return
+-  saving.value = true
+-  try {
+-    await store.setDefaultThinkingLevel(thinking.value as ThinkingLevel)
+-    ElMessage.success("Thinking level saved")
+-  } catch (err) {
+-    ElMessage.error(err instanceof Error ? err.message : String(err))
+-  } finally {
+-    saving.value = false
+-  }
+-}
+-</script>
+-
+-<template>
+-  <section class="panel">
+-    <h2>Settings</h2>
+-    <p class="note">Defaults used when creating new sessions.</p>
+-
+-    <div class="setting">
+-      <h3>Default model</h3>
+-      <ModelPicker v-model="model" />
+-      <div class="setting-actions">
+-        <el-button type="primary" :disabled="!model || saving" :icon="IconCheck" @click="saveModel">
+-          Save default model
+-        </el-button>
+-      </div>
+-    </div>
+-
+-    <div class="setting">
+-      <h3>Default thinking level</h3>
+-      <el-select v-model="thinking" class="level-select" filterable>
+-        <el-option label="— default —" :value="THINKING_DEFAULT" />
+-        <el-option v-for="l in THINKING_LEVELS" :key="l" :label="l" :value="l" />
+-      </el-select>
+-      <div class="setting-actions">
+-        <el-button
+-          type="primary"
+-          :disabled="thinking === THINKING_DEFAULT || saving"
+-          :icon="IconCheck"
+-          @click="saveThinking"
+-        >
+-          Save thinking level
+-        </el-button>
+-      </div>
+-    </div>
+-  </section>
+-</template>
+-
+-<style scoped>
+-.panel {
+-  padding: 16px;
+-  overflow-y: auto;
+-  display: flex;
+-  flex-direction: column;
+-  gap: 14px;
+-  max-width: 640px;
+-}
+-.panel h2 {
+-  margin: 0;
+-  font-size: 17px;
+-}
+-.note {
+-  color: var(--fg-dim);
+-  font-size: 12px;
+-  margin: 0;
+-}
+-.setting {
+-  display: flex;
+-  flex-direction: column;
+-  gap: 8px;
+-  border: 1px solid var(--border);
+-  border-radius: 8px;
+-  padding: 12px;
+-  background: var(--bg-panel);
+-}
+-.setting h3 {
+-  margin: 0;
+-  font-size: 14px;
+-}
+-.level-select {
+-  align-self: flex-start;
+-  width: 200px;
+-}
+-</style>
+diff --git a/packages/app/test/chat-view.test.ts b/packages/app/test/chat-view.test.ts
+index 2c97ec9..8ccd679 100644
+--- a/packages/app/test/chat-view.test.ts
++++ b/packages/app/test/chat-view.test.ts
+@@ -2,7 +2,7 @@ import { reactive } from "vue"
+ import { describe, expect, test, vi } from "vitest"
+ import { mount } from "@vue/test-utils"
+ import ElementPlus from "element-plus"
+-import ChatView from "../src/mainview/views/ChatView.vue"
++import ChatView from "../src/mainview/components/ChatView.vue"
+ import { StoreKey } from "../src/mainview/store"
+ import type { SessionInfo, StoredMessage } from "@my-pi/shared"
+ 
