@@ -1,17 +1,19 @@
 import { computed, ref } from "vue"
 import { ElMessage } from "element-plus"
 import type { PluginInfo } from "@my-pi/shared"
-import { usePluginStore } from "../../stores"
+import { usePluginStore, useSessionStore } from "../../stores"
 import { showError } from "../shared/useErrors"
 import { confirmAction } from "../shared/useConfirm"
 
 /**
  * Plugins settings: add a plugin by path (global or workspace scope), toggle
  * enabled state, and remove (with confirmation). Reads plugin lists from the
- * plugin store's shared state.
+ * plugin store's state; the active workspace (owned by the session store)
+ * selects the workspace-scoped list.
  */
 export function usePlugins() {
   const plugins = usePluginStore()
+  const sessions = useSessionStore()
 
   const path = ref("")
   const scope = ref<"global" | "workspace">("global")
@@ -20,9 +22,9 @@ export function usePlugins() {
   const globalPlugins = computed(() =>
     plugins.state.pluginsGlobal.filter((p) => p.scope === "global"),
   )
-  const activeWorkspaceId = computed(() => plugins.state.activeWorkspaceId)
+  const activeWorkspaceId = computed(() => sessions.state.activeWorkspaceId)
   const workspacePlugins = computed(() => {
-    const wsId = plugins.state.activeWorkspaceId
+    const wsId = sessions.state.activeWorkspaceId
     return wsId
       ? (plugins.state.pluginsWorkspace[wsId] ?? []).filter((p) => p.scope === "workspace")
       : []
@@ -40,7 +42,7 @@ export function usePlugins() {
         scope: scope.value,
         workspaceId:
           scope.value === "workspace"
-            ? (plugins.state.activeWorkspaceId ?? undefined)
+            ? (sessions.state.activeWorkspaceId ?? undefined)
             : undefined,
       })
       path.value = ""

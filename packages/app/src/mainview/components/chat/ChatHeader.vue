@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from "vue"
 import type { SessionInfo } from "@my-pi/shared"
 import IconFork from "~icons/hugeicons/fork"
 import { useModelOptions } from "../../hooks/picks/useModelOptions"
@@ -14,12 +15,13 @@ const emit = defineEmits<{ (e: "fork"): void }>()
 const sessions = useSessionStore()
 const { options, loading, toValue, parseValue, refresh } = useModelOptions()
 
-const currentValue = () =>
+const currentValue = computed(() =>
   toValue(
     props.session?.modelProvider && props.session?.modelId
       ? { provider: props.session.modelProvider, id: props.session.modelId }
       : null,
-  ) ?? ""
+  ) ?? "",
+)
 
 async function onChange(value: string): Promise<void> {
   const model = parseValue(value)
@@ -37,7 +39,7 @@ async function onChange(value: string): Promise<void> {
     <div class="chat-title">
       <h2>{{ session?.title ?? "Session" }}</h2>
       <el-select
-        :model-value="currentValue()"
+        :model-value="currentValue"
         placeholder="Select model"
         class="chat-model"
         filterable

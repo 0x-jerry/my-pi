@@ -112,13 +112,13 @@ describe("Store", () => {
     client.onRefreshAll?.()
     await flush()
 
-    expect(store.state.workspaces).toHaveLength(1)
-    expect(store.state.providers[0].id).toBe("anthropic")
-    expect(store.state.settings.defaultModel).toEqual({
+    expect(store.workspaces.state.workspaces).toHaveLength(1)
+    expect(store.models.state.providers[0].id).toBe("anthropic")
+    expect(store.settings.state.settings.defaultModel).toEqual({
       provider: "anthropic",
       id: "claude",
     })
-    expect(store.state.settings.defaultThinkingLevel).toBe("high")
+    expect(store.settings.state.settings.defaultThinkingLevel).toBe("high")
   })
 
   test("createWorkspace refetches the workspace list", async () => {
@@ -127,14 +127,14 @@ describe("Store", () => {
       [RpcMethod.workspacesCreate]: () => ws,
       [RpcMethod.workspacesList]: () => [ws],
     })
-    await store.createWorkspace("Workspace", "/tmp/ws")
+    await store.workspaces.createWorkspace("Workspace", "/tmp/ws")
 
     const methods = client.calls.map((c) => c.method)
     expect(methods).toEqual([
       RpcMethod.workspacesCreate,
       RpcMethod.workspacesList,
     ])
-    expect(store.state.workspaces).toHaveLength(1)
+    expect(store.workspaces.state.workspaces).toHaveLength(1)
   })
 
   test("removeWorkspace clears the active workspace and refetches", async () => {
@@ -142,13 +142,13 @@ describe("Store", () => {
       [RpcMethod.workspacesRemove]: () => undefined,
       [RpcMethod.workspacesList]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.activeSessionId = "s1"
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.activeSessionId = "s1"
     await store.removeWorkspace("w1")
 
-    expect(store.state.activeWorkspaceId).toBeNull()
-    expect(store.state.activeSessionId).toBeNull()
-    expect(store.state.workspaces).toEqual([])
+    expect(store.sessions.state.activeWorkspaceId).toBeNull()
+    expect(store.sessions.state.activeSessionId).toBeNull()
+    expect(store.workspaces.state.workspaces).toEqual([])
     expect(client.calls[0].method).toBe(RpcMethod.workspacesRemove)
   })
 
@@ -158,13 +158,13 @@ describe("Store", () => {
       [RpcMethod.sessionsCreate]: () => s,
       [RpcMethod.sessionsList]: () => [s],
     })
-    await store.createSession({ workspaceId: "w1" })
+    await store.sessions.createSession({ workspaceId: "w1" })
 
     const methods = client.calls.map((c) => c.method)
     expect(methods).toEqual([RpcMethod.sessionsCreate, RpcMethod.sessionsList])
-    expect(store.state.sessionsByWorkspace.w1).toEqual([s])
+    expect(store.sessions.state.sessionsByWorkspace.w1).toEqual([s])
     // No active workspace yet, so the flat alias stays empty.
-    expect(store.state.sessions).toEqual([])
+    expect(store.sessions.state.sessions).toEqual([])
   })
 
   test("deleteSession clears the active session and refetches", async () => {
@@ -172,9 +172,9 @@ describe("Store", () => {
       [RpcMethod.sessionsDelete]: () => undefined,
       [RpcMethod.sessionsList]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.activeSessionId = "s1"
-    store.state.streaming.s1 = {
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.activeSessionId = "s1"
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "",
       thinkingBuf: "",
@@ -183,17 +183,17 @@ describe("Store", () => {
       pendingSend: null,
     } satisfies StreamingState
 
-    await store.deleteSession("s1")
-    expect(store.state.activeSessionId).toBeNull()
-    expect(store.state.streaming.s1).toBeUndefined()
-    expect(store.state.messagesBySession.s1).toBeUndefined()
-    expect(store.state.lastUsage.s1).toBeUndefined()
+    await store.sessions.deleteSession("s1")
+    expect(store.sessions.state.activeSessionId).toBeNull()
+    expect(store.chat.state.streaming.s1).toBeUndefined()
+    expect(store.sessions.state.messagesBySession.s1).toBeUndefined()
+    expect(store.chat.state.lastUsage.s1).toBeUndefined()
     expect(client.calls.some((c) => c.method === RpcMethod.sessionsList)).toBe(true)
   })
 
   test("notification: status running initializes streaming and resets buffers", async () => {
     const { client, store } = setup()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "idle",
       textBuf: "stale",
       thinkingBuf: "stale",
@@ -204,7 +204,7 @@ describe("Store", () => {
     client.emit("session.status", { sessionId: "s1", status: "running" })
     await flush()
 
-    const st = store.state.streaming.s1
+    const st = store.chat.state.streaming.s1
     expect(st.status).toBe("running")
     expect(st.textBuf).toBe("")
     expect(st.thinkingBuf).toBe("")
@@ -216,7 +216,7 @@ describe("Store", () => {
     client.emit("session.delta", { sessionId: "s1", kind: "text", delta: "lo" })
     client.emit("session.delta", { sessionId: "s1", kind: "thinking", delta: "hm" })
 
-    const st = store.state.streaming.s1
+    const st = store.chat.state.streaming.s1
     expect(st.textBuf).toBe("hello")
     expect(st.thinkingBuf).toBe("hm")
   })
@@ -241,7 +241,7 @@ describe("Store", () => {
       result: "done",
     })
 
-    expect(store.state.streaming.s1.activeTool).toMatchObject({
+    expect(store.chat.state.streaming.s1.activeTool).toMatchObject({
       toolName: "bash",
       args: { cmd: "ls" },
       partialResult: "partial",
@@ -252,7 +252,7 @@ describe("Store", () => {
 
   test("notification: message_end appends and clears assistant buffers", () => {
     const { client, store } = setup()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "streamed",
       thinkingBuf: "thought",
@@ -265,9 +265,9 @@ describe("Store", () => {
       message: makeMessage(),
     })
 
-    expect(store.messagesFor("s1")).toHaveLength(1)
-    expect(store.state.streaming.s1.textBuf).toBe("")
-    expect(store.state.streaming.s1.thinkingBuf).toBe("")
+    expect(store.sessions.messagesFor("s1")).toHaveLength(1)
+    expect(store.chat.state.streaming.s1.textBuf).toBe("")
+    expect(store.chat.state.streaming.s1.thinkingBuf).toBe("")
   })
 
   test("notification: run_end reconciles by id (idempotent) and clears streaming", async () => {
@@ -287,20 +287,20 @@ describe("Store", () => {
     })
     await flush()
 
-    expect(store.messagesFor("s1")).toHaveLength(2)
-    expect(store.messagesFor("s1").map((m) => m.id)).toEqual(["m-s1-1", "m-s1-2"])
-    expect(store.state.lastUsage.s1?.totalTokens).toBe(30)
-    expect(store.state.streaming.s1.pendingSend).toBeNull()
+    expect(store.sessions.messagesFor("s1")).toHaveLength(2)
+    expect(store.sessions.messagesFor("s1").map((m) => m.id)).toEqual(["m-s1-1", "m-s1-2"])
+    expect(store.chat.state.lastUsage.s1?.totalTokens).toBe(30)
+    expect(store.chat.state.streaming.s1.pendingSend).toBeNull()
   })
 
   test("sendMessage keeps pendingSend until run_end; error surfaces on RPC failure", async () => {
     const { client, store } = setup({
       [RpcMethod.chatSend]: () => undefined,
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.activeSessionId = "s1"
-    const p = store.sendMessage("s1", "hello")
-    expect(store.state.streaming.s1.pendingSend).toBe("hello")
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.activeSessionId = "s1"
+    const p = store.chat.sendMessage("s1", "hello")
+    expect(store.chat.state.streaming.s1.pendingSend).toBe("hello")
     await p
 
     // RPC resolves at settle; run_end clears the optimistic message.
@@ -312,15 +312,15 @@ describe("Store", () => {
       aborted: false,
     })
     await flush()
-    expect(store.state.streaming.s1.pendingSend).toBeNull()
+    expect(store.chat.state.streaming.s1.pendingSend).toBeNull()
 
     // Failure path
     client.handlers[RpcMethod.chatSend] = () => {
       throw new Error("Agent is busy")
     }
-    await expect(store.sendMessage("s1", "again")).rejects.toThrow("busy")
-    expect(store.state.streaming.s1.status).toBe("error")
-    expect(store.state.streaming.s1.error).toContain("busy")
+    await expect(store.chat.sendMessage("s1", "again")).rejects.toThrow("busy")
+    expect(store.chat.state.streaming.s1.status).toBe("error")
+    expect(store.chat.state.streaming.s1.error).toContain("busy")
   })
 
   test("notification: session.status error sets streaming error state", async () => {
@@ -331,28 +331,28 @@ describe("Store", () => {
       error: "model unavailable",
     })
     await flush()
-    expect(store.state.streaming.s1.status).toBe("error")
-    expect(store.state.streaming.s1.error).toBe("model unavailable")
+    expect(store.chat.state.streaming.s1.status).toBe("error")
+    expect(store.chat.state.streaming.s1.error).toBe("model unavailable")
   })
 
   test("notification: workspace.updated refetches and clears removed workspace", async () => {
     const { client, store } = setup({
       [RpcMethod.workspacesList]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.activeSessionId = "s1"
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.activeSessionId = "s1"
     client.emit("workspace.updated", { workspaceId: "w1" })
     await flush()
 
-    expect(store.state.workspaces).toEqual([])
-    expect(store.state.activeWorkspaceId).toBeNull()
+    expect(store.workspaces.state.workspaces).toEqual([])
+    expect(store.sessions.state.activeWorkspaceId).toBeNull()
   })
 
   test("abort delegates to chat.abort", async () => {
     const { client, store } = setup({
       [RpcMethod.chatAbort]: () => undefined,
     })
-    await store.abort("s1")
+    await store.chat.abort("s1")
     expect(client.calls[0]).toMatchObject({
       method: RpcMethod.chatAbort,
       params: { sessionId: "s1" },
@@ -364,10 +364,10 @@ describe("Store", () => {
     const { store } = setup({
       [RpcMethod.sessionsMessages]: () => [m],
     })
-    store.state.activeSessionId = "s1"
-    await store.openSession("s1")
-    expect(store.state.activeSessionId).toBe("s1")
-    expect(store.messagesFor("s1")).toEqual([m])
+    store.sessions.state.activeSessionId = "s1"
+    await store.sessions.openSession("s1")
+    expect(store.sessions.state.activeSessionId).toBe("s1")
+    expect(store.sessions.messagesFor("s1")).toEqual([m])
   })
 
   test("setPluginEnabled refetches global + workspace plugin lists", async () => {
@@ -375,8 +375,8 @@ describe("Store", () => {
       [RpcMethod.pluginsSetEnabled]: () => undefined,
       [RpcMethod.pluginsList]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    await store.setPluginEnabled("p1", true)
+    store.sessions.state.activeWorkspaceId = "w1"
+    await store.plugins.setEnabled("p1", true)
     expect(client.calls[0].method).toBe(RpcMethod.pluginsSetEnabled)
     expect(client.calls.some((c) => c.method === RpcMethod.pluginsList)).toBe(true)
   })
@@ -385,20 +385,20 @@ describe("Store", () => {
     const { client, store } = setup({
       [RpcMethod.settingsSet]: () => undefined,
     })
-    await store.setDefaultModel({ provider: "anthropic", id: "claude" })
-    await store.setChatModel({ provider: "openai", id: "gpt-5" })
-    await store.setTitleModel(null)
-    await store.setDefaultThinkingLevel("high")
-    expect(store.state.settings.defaultModel).toEqual({
+    await store.settings.setDefaultModel({ provider: "anthropic", id: "claude" })
+    await store.settings.setChatModel({ provider: "openai", id: "gpt-5" })
+    await store.settings.setTitleModel(null)
+    await store.settings.setDefaultThinkingLevel("high")
+    expect(store.settings.state.settings.defaultModel).toEqual({
       provider: "anthropic",
       id: "claude",
     })
-    expect(store.state.settings.chatModel).toEqual({
+    expect(store.settings.state.settings.chatModel).toEqual({
       provider: "openai",
       id: "gpt-5",
     })
-    expect(store.state.settings.titleModel).toBeUndefined()
-    expect(store.state.settings.defaultThinkingLevel).toBe("high")
+    expect(store.settings.state.settings.titleModel).toBeUndefined()
+    expect(store.settings.state.settings.defaultThinkingLevel).toBe("high")
     expect(client.calls.every((c) => c.method === RpcMethod.settingsSet)).toBe(true)
   })
 
@@ -412,12 +412,12 @@ describe("Store", () => {
         unknownKey: 123, // not a managed key -> never looked up
       }),
     })
-    await store.loadSettings()
-    expect(store.state.settings.chatModel).toEqual({ provider: "a", id: "b" })
-    expect(store.state.settings.defaultModel).toBeUndefined()
-    expect(store.state.settings.titleModel).toEqual({ provider: "a", id: "t" })
-    expect(store.state.settings.defaultThinkingLevel).toBe("high")
-    expect(Object.keys(store.state.settings)).not.toContain("unknownKey")
+    await store.settings.load()
+    expect(store.settings.state.settings.chatModel).toEqual({ provider: "a", id: "b" })
+    expect(store.settings.state.settings.defaultModel).toBeUndefined()
+    expect(store.settings.state.settings.titleModel).toEqual({ provider: "a", id: "t" })
+    expect(store.settings.state.settings.defaultThinkingLevel).toBe("high")
+    expect(Object.keys(store.settings.state.settings)).not.toContain("unknownKey")
   })
 
   test("refreshAll re-syncs the active workspace sessions and session transcript", async () => {
@@ -431,13 +431,13 @@ describe("Store", () => {
       [RpcMethod.sessionsList]: () => [s],
       [RpcMethod.sessionsMessages]: () => [m],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.activeSessionId = "s1"
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.activeSessionId = "s1"
 
     await store.refreshAll()
 
-    expect(store.state.sessions).toEqual([s])
-    expect(store.messagesFor("s1")).toEqual([m])
+    expect(store.sessions.state.sessions).toEqual([s])
+    expect(store.sessions.messagesFor("s1")).toEqual([m])
     const methods = client.calls.map((c) => c.method)
     expect(methods).toContain(RpcMethod.sessionsList)
     expect(methods).toContain(RpcMethod.sessionsMessages)
@@ -445,7 +445,7 @@ describe("Store", () => {
 
   test("zero-usage run_end (re-settle) does not clobber the last real usage", async () => {
     const { client, store } = setup()
-    store.state.lastUsage.s1 = {
+    store.chat.state.lastUsage.s1 = {
       input: 10,
       output: 20,
       cacheRead: 0,
@@ -468,7 +468,7 @@ describe("Store", () => {
       aborted: false,
     })
     await flush()
-    expect(store.state.lastUsage.s1?.totalTokens).toBe(30)
+    expect(store.chat.state.lastUsage.s1?.totalTokens).toBe(30)
   })
 
   test("status running updates the local session row without refetching; idle refetches", async () => {
@@ -476,11 +476,11 @@ describe("Store", () => {
     const { client, store } = setup({
       [RpcMethod.sessionsList]: () => [makeSession({ status: "idle" })],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.sessions = [s]
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.sessions = [s]
 
     client.emit("session.status", { sessionId: "s1", status: "running" })
-    expect(store.state.sessions[0].status).toBe("running")
+    expect(store.sessions.state.sessions[0].status).toBe("running")
     // no refetch on the running transition
     expect(client.calls.filter((c) => c.method === RpcMethod.sessionsList)).toHaveLength(0)
 
@@ -491,9 +491,28 @@ describe("Store", () => {
     ).toBeGreaterThan(0)
   })
 
+  test("status patches the row inside the workspace cache through the flat alias", async () => {
+    const s = makeSession()
+    const { client, store } = setup()
+    store.sessions.state.activeWorkspaceId = "w1"
+    // The cache and the flat alias share the same array (as in the app); the
+    // status patch must land in that shared array so the tree node (which
+    // renders sessionsByWorkspace) sees the status change.
+    store.sessions.state.sessionsByWorkspace.w1 = [s]
+    store.sessions.state.sessions = store.sessions.state.sessionsByWorkspace.w1
+
+    client.emit("session.status", { sessionId: "s1", status: "running" })
+
+    expect(store.sessions.state.sessions[0].status).toBe("running")
+    expect(store.sessions.state.sessionsByWorkspace.w1[0].status).toBe("running")
+    expect(store.sessions.state.sessions[0]).toBe(
+      store.sessions.state.sessionsByWorkspace.w1[0],
+    )
+  })
+
   test("tool_start freezes the current buffers into parts and resets them", () => {
     const { client, store } = setup()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "answer so far",
       thinkingBuf: "thought",
@@ -508,7 +527,7 @@ describe("Store", () => {
       args: {},
     })
 
-    const st = store.state.streaming.s1
+    const st = store.chat.state.streaming.s1
     expect(st.parts).toEqual([{ text: "answer so far", thinking: "thought" }])
     expect(st.textBuf).toBe("")
     expect(st.thinkingBuf).toBe("")
@@ -517,17 +536,17 @@ describe("Store", () => {
 
   test("drafts: start/open/discard lifecycle is local-only", () => {
     const { client, store } = setup()
-    const id = store.startDraft("w1")
-    expect(store.isDraft(id)).toBe(true)
-    expect(store.state.drafts).toEqual([{ localId: id, workspaceId: "w1" }])
+    const id = store.workspaces.startDraft("w1")
+    expect(store.workspaces.isDraft(id)).toBe(true)
+    expect(store.workspaces.state.drafts).toEqual([{ localId: id, workspaceId: "w1" }])
 
-    store.openDraft(id)
-    expect(store.state.activeSessionId).toBe(id)
+    store.sessions.openDraft(id)
+    expect(store.sessions.state.activeSessionId).toBe(id)
 
-    store.discardDraft(id)
-    expect(store.isDraft(id)).toBe(false)
-    expect(store.state.drafts).toEqual([])
-    expect(store.state.activeSessionId).toBeNull()
+    store.sessions.discardDraft(id)
+    expect(store.workspaces.isDraft(id)).toBe(false)
+    expect(store.workspaces.state.drafts).toEqual([])
+    expect(store.sessions.state.activeSessionId).toBeNull()
     expect(client.calls).toHaveLength(0)
   })
 
@@ -539,15 +558,15 @@ describe("Store", () => {
       [RpcMethod.sessionsMessages]: () => [],
       [RpcMethod.chatSend]: () => undefined,
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.settings.chatModel = { provider: "anthropic", id: "claude" }
-    const id = store.startDraft("w1")
-    store.openDraft(id)
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.settings.state.settings.chatModel = { provider: "anthropic", id: "claude" }
+    const id = store.workspaces.startDraft("w1")
+    store.sessions.openDraft(id)
 
     await store.sendDraft(id, "hello world")
 
-    expect(store.state.drafts).toEqual([])
-    expect(store.state.activeSessionId).toBe("s1")
+    expect(store.workspaces.state.drafts).toEqual([])
+    expect(store.sessions.state.activeSessionId).toBe("s1")
     const createCall = client.calls.find((c) => c.method === RpcMethod.sessionsCreate)
     expect(createCall?.params).toEqual({
       workspaceId: "w1",
@@ -565,15 +584,15 @@ describe("Store", () => {
         throw new Error("should not be called")
       },
     })
-    store.state.activeWorkspaceId = "w1"
-    const id = store.startDraft("w1")
-    store.openDraft(id)
+    store.sessions.state.activeWorkspaceId = "w1"
+    const id = store.workspaces.startDraft("w1")
+    store.sessions.openDraft(id)
 
     await expect(store.sendDraft(id, "hi")).rejects.toThrow(
       "No model configured",
     )
-    expect(store.isDraft(id)).toBe(true)
-    expect(store.state.activeSessionId).toBe(id)
+    expect(store.workspaces.isDraft(id)).toBe(true)
+    expect(store.sessions.state.activeSessionId).toBe(id)
     expect(client.calls).toHaveLength(0)
   })
 
@@ -583,25 +602,25 @@ describe("Store", () => {
         throw new Error("boom")
       },
     })
-    store.state.settings.chatModel = { provider: "anthropic", id: "claude" }
-    const id = store.startDraft("w1")
-    store.openDraft(id)
+    store.settings.state.settings.chatModel = { provider: "anthropic", id: "claude" }
+    const id = store.workspaces.startDraft("w1")
+    store.sessions.openDraft(id)
 
     await expect(store.sendDraft(id, "hi")).rejects.toThrow("boom")
-    expect(store.isDraft(id)).toBe(true)
-    expect(store.state.activeSessionId).toBe(id)
+    expect(store.workspaces.isDraft(id)).toBe(true)
+    expect(store.sessions.state.activeSessionId).toBe(id)
   })
 
   test("title_updated notification patches the session row in place", () => {
     const { client, store } = setup()
-    store.state.sessions = [makeSession({ title: "New session", updatedAt: 100 })]
+    store.sessions.state.sessions = [makeSession({ title: "New session", updatedAt: 100 })]
     client.emit("session.title_updated", {
       sessionId: "s1",
       title: "Refactor the sidebar",
       updatedAt: 200,
     })
-    expect(store.state.sessions[0].title).toBe("Refactor the sidebar")
-    expect(store.state.sessions[0].updatedAt).toBe(200)
+    expect(store.sessions.state.sessions[0].title).toBe("Refactor the sidebar")
+    expect(store.sessions.state.sessions[0].updatedAt).toBe(200)
   })
 
   test("refreshAll skips message load for a draft session", async () => {
@@ -613,9 +632,9 @@ describe("Store", () => {
       [RpcMethod.settingsGetAll]: () => ({}),
       [RpcMethod.sessionsList]: () => [s],
     })
-    store.state.activeWorkspaceId = "w1"
-    const id = store.startDraft("w1")
-    store.openDraft(id)
+    store.sessions.state.activeWorkspaceId = "w1"
+    const id = store.workspaces.startDraft("w1")
+    store.sessions.openDraft(id)
 
     await store.refreshAll()
 
@@ -629,13 +648,13 @@ describe("Store", () => {
       [RpcMethod.workspacesRemove]: () => undefined,
       [RpcMethod.workspacesList]: () => [],
     })
-    store.startDraft("w1")
-    store.startDraft("w2")
-    store.state.activeWorkspaceId = "w1"
+    store.workspaces.startDraft("w1")
+    store.workspaces.startDraft("w2")
+    store.sessions.state.activeWorkspaceId = "w1"
 
     await store.removeWorkspace("w1")
 
-    expect(store.state.drafts.map((d) => d.workspaceId)).toEqual(["w2"])
+    expect(store.workspaces.state.drafts.map((d) => d.workspaceId)).toEqual(["w2"])
   })
 
   test("openSession from a non-active workspace switches active workspace and re-aliases", async () => {
@@ -644,25 +663,25 @@ describe("Store", () => {
     const { store } = setup({
       [RpcMethod.sessionsMessages]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.sessionsByWorkspace.w1 = [s1]
-    store.state.sessionsByWorkspace.w2 = [s2]
-    store.state.sessions = store.state.sessionsByWorkspace.w1
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.sessionsByWorkspace.w1 = [s1]
+    store.sessions.state.sessionsByWorkspace.w2 = [s2]
+    store.sessions.state.sessions = store.sessions.state.sessionsByWorkspace.w1
 
-    await store.openSession("s2")
+    await store.sessions.openSession("s2")
 
-    expect(store.state.activeWorkspaceId).toBe("w2")
+    expect(store.sessions.state.activeWorkspaceId).toBe("w2")
     // The flat alias now points at the newly active workspace's cached array.
-    expect(store.state.sessions).toBe(store.state.sessionsByWorkspace.w2)
-    expect(store.state.activeSessionId).toBe("s2")
+    expect(store.sessions.state.sessions).toBe(store.sessions.state.sessionsByWorkspace.w2)
+    expect(store.sessions.state.activeSessionId).toBe("s2")
   })
 
   test("sessionById falls back to the flat alias list", () => {
     const s = makeSession()
     const { store } = setup()
-    store.state.sessions = [s]
+    store.sessions.state.sessions = [s]
     // Same row as the alias array holds (reactive proxy, hence toBe on the element).
-    expect(store.sessions.sessionById("s1")).toBe(store.state.sessions[0])
+    expect(store.sessions.sessionById("s1")).toBe(store.sessions.state.sessions[0])
   })
 
   test("removeWorkspace evicts the removed workspace's session cache", async () => {
@@ -670,12 +689,76 @@ describe("Store", () => {
       [RpcMethod.workspacesRemove]: () => undefined,
       [RpcMethod.workspacesList]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.sessionsByWorkspace.w1 = [makeSession({ workspaceId: "w1" })]
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.sessionsByWorkspace.w1 = [makeSession({ workspaceId: "w1" })]
 
     await store.removeWorkspace("w1")
 
-    expect(store.state.sessionsByWorkspace.w1).toBeUndefined()
+    expect(store.sessions.state.sessionsByWorkspace.w1).toBeUndefined()
+  })
+
+  test("removeWorkspace evicts chat state of the removed workspace's sessions", async () => {
+    const { store } = setup({
+      [RpcMethod.workspacesRemove]: () => undefined,
+      [RpcMethod.workspacesList]: () => [],
+    })
+    store.sessions.state.sessionsByWorkspace.w1 = [
+      makeSession({ id: "s1", workspaceId: "w1" }),
+    ]
+    store.chat.state.streaming.s1 = {
+      status: "idle",
+      textBuf: "",
+      thinkingBuf: "",
+      parts: [],
+      activeTool: null,
+      pendingSend: null,
+    } satisfies StreamingState
+    store.chat.state.lastUsage.s1 = {
+      input: 1,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 3,
+      cost: 0,
+    }
+
+    await store.removeWorkspace("w1")
+
+    expect(store.chat.state.streaming.s1).toBeUndefined()
+    expect(store.chat.state.lastUsage.s1).toBeUndefined()
+  })
+
+  test("workspace.updated evicts chat state of the removed workspace's sessions", async () => {
+    const { client, store } = setup({
+      [RpcMethod.workspacesList]: () => [],
+    })
+    store.sessions.state.sessionsByWorkspace.w1 = [
+      makeSession({ id: "s1", workspaceId: "w1" }),
+    ]
+    store.chat.state.streaming.s1 = {
+      status: "running",
+      textBuf: "partial",
+      thinkingBuf: "",
+      parts: [],
+      activeTool: null,
+      pendingSend: null,
+    } satisfies StreamingState
+
+    client.emit("workspace.updated", { workspaceId: "w1" })
+    await flush()
+
+    expect(store.chat.state.streaming.s1).toBeUndefined()
+    expect(store.sessions.state.sessionsByWorkspace.w1).toBeUndefined()
+  })
+
+  test("streamingFor is a pure read and does not create entries", () => {
+    const { store } = setup()
+
+    const st = store.chat.streamingFor("s1")
+    expect(st.status).toBe("idle")
+    expect(st.textBuf).toBe("")
+    // No entry was materialized into the reactive state by reading it.
+    expect(store.chat.state.streaming.s1).toBeUndefined()
   })
 
   test("deleteSession refreshes the session's own workspace list when not active", async () => {
@@ -684,17 +767,17 @@ describe("Store", () => {
       [RpcMethod.sessionsDelete]: () => undefined,
       [RpcMethod.sessionsList]: () => [],
     })
-    store.state.activeWorkspaceId = "w1"
-    store.state.sessionsByWorkspace.w1 = [
+    store.sessions.state.activeWorkspaceId = "w1"
+    store.sessions.state.sessionsByWorkspace.w1 = [
       makeSession({ id: "s1", workspaceId: "w1" }),
     ]
-    store.state.sessionsByWorkspace.w2 = [s2]
+    store.sessions.state.sessionsByWorkspace.w2 = [s2]
 
-    await store.deleteSession("s2")
+    await store.sessions.deleteSession("s2")
 
     const listCall = client.calls.find((c) => c.method === RpcMethod.sessionsList)
     expect(listCall?.params).toEqual({ workspaceId: "w2" })
-    expect(store.state.sessionsByWorkspace.w2).toEqual([])
+    expect(store.sessions.state.sessionsByWorkspace.w2).toEqual([])
   })
 
   test("refreshAll reloads sessions of every cached workspace", async () => {
@@ -708,8 +791,8 @@ describe("Store", () => {
       [RpcMethod.settingsGetAll]: () => ({}),
       [RpcMethod.sessionsList]: () => [],
     })
-    store.state.sessionsByWorkspace.w1 = []
-    store.state.sessionsByWorkspace.w2 = []
+    store.sessions.state.sessionsByWorkspace.w1 = []
+    store.sessions.state.sessionsByWorkspace.w2 = []
 
     await store.refreshAll()
 
@@ -725,10 +808,10 @@ describe("Store", () => {
     const { client, store } = setup({
       [RpcMethod.sessionsList]: () => [],
     })
-    store.state.sessionsByWorkspace.w1 = [
+    store.sessions.state.sessionsByWorkspace.w1 = [
       makeSession({ id: "s1", workspaceId: "w1" }),
     ]
-    store.state.sessionsByWorkspace.w2 = [
+    store.sessions.state.sessionsByWorkspace.w2 = [
       makeSession({ id: "s2", workspaceId: "w2" }),
     ]
 
@@ -749,11 +832,11 @@ describe("Store", () => {
       [RpcMethod.sessionsList]: () => [makeSession()],
     })
     // Workspace list is loaded and w1 is no longer in it.
-    store.state.workspaces = [makeWorkspace({ id: "w2", path: "/tmp/ws2" })]
+    store.workspaces.state.workspaces = [makeWorkspace({ id: "w2", path: "/tmp/ws2" })]
 
     await store.sessions.load("w1")
 
-    expect(store.state.sessionsByWorkspace.w1).toBeUndefined()
+    expect(store.sessions.state.sessionsByWorkspace.w1).toBeUndefined()
   })
 
   test("session load stores into the cache when the workspace exists", async () => {
@@ -761,11 +844,11 @@ describe("Store", () => {
     const { store } = setup({
       [RpcMethod.sessionsList]: () => [s],
     })
-    store.state.workspaces = [makeWorkspace()]
+    store.workspaces.state.workspaces = [makeWorkspace()]
 
     await store.sessions.load("w1")
 
-    expect(store.state.sessionsByWorkspace.w1).toEqual([s])
+    expect(store.sessions.state.sessionsByWorkspace.w1).toEqual([s])
   })
 
   test("openWorkspace re-points the flat alias at the workspace cache", async () => {
@@ -774,12 +857,12 @@ describe("Store", () => {
       [RpcMethod.sessionsList]: () => [s],
       [RpcMethod.pluginsList]: () => [],
     })
-    store.state.sessionsByWorkspace.w1 = [s]
+    store.sessions.state.sessionsByWorkspace.w1 = [s]
 
     await store.openWorkspace("w1")
 
-    expect(store.state.activeWorkspaceId).toBe("w1")
-    expect(store.state.activeSessionId).toBeNull()
-    expect(store.state.sessions).toBe(store.state.sessionsByWorkspace.w1)
+    expect(store.sessions.state.activeWorkspaceId).toBe("w1")
+    expect(store.sessions.state.activeSessionId).toBeNull()
+    expect(store.sessions.state.sessions).toBe(store.sessions.state.sessionsByWorkspace.w1)
   })
 })

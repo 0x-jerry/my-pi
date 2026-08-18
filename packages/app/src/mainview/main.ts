@@ -57,5 +57,5 @@ app.provide(StoreKey, store)
 app.mount("#app")
 
 if (config) {
-  store.init()
+  store.connection.init()
 }

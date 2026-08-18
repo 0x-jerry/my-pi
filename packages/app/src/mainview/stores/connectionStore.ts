@@ -1,8 +1,16 @@
+import { reactive } from "vue"
 import { RpcClient, type ConnectionState } from "../rpc/client"
 import type { RpcNotifications } from "@my-pi/shared"
-import type { AppState } from "./state"
 import { errMessage } from "./types"
 import { useLocalStorage } from "@vueuse/core"
+
+/** Connection slice: the live WebSocket state. Owned by ConnectionStore. */
+function createConnectionState() {
+  return reactive({
+    connectionState: "closed" as ConnectionState,
+  })
+}
+export type ConnectionStateSlice = ReturnType<typeof createConnectionState>
 
 /** User-configured connection settings (persisted client-side in localStorage). */
 export interface ConnectionConfig {
@@ -27,13 +35,19 @@ const storedConfig = useLocalStorage<ConnectionConfig | null>(STORAGE_KEY, null)
  */
 export class ConnectionStore {
   readonly client: RpcClient
-  readonly state: AppState
+  readonly state: ConnectionStateSlice
 
-  constructor(state: AppState, client: RpcClient) {
-    this.state = state
+  /**
+   * Injected by the root facade: surface async errors into the global error
+   * banner (the root owns that slice).
+   */
+  setError: (message: string) => void = () => {}
+
+  constructor(client: RpcClient) {
+    this.state = createConnectionState()
     this.client = client
     client.onConnectionStateChange = (s: ConnectionState) => {
-      state.connectionState = s
+      this.state.connectionState = s
     }
   }
 
@@ -47,11 +61,11 @@ export class ConnectionStore {
         const result = handler(p)
         if (result instanceof Promise) {
           result.catch((err) => {
-            this.state.error = errMessage(err)
+            this.setError(errMessage(err))
           })
         }
       } catch (err) {
-        this.state.error = errMessage(err)
+        this.setError(errMessage(err))
       }
     })
   }

@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { DEFAULT_SESSION_TITLE } from "@my-pi/shared"
-import { useWorkspaceStore } from "../stores"
+import { useSessionStore } from "../stores"
 import IconDelete from "~icons/hugeicons/delete-01"
 
 const props = defineProps<{ localId: string }>()
-const workspaces = useWorkspaceStore()
+const sessions = useSessionStore()
 </script>
 
 <template>
   <li class="session-row draft">
     <button
       class="session"
-      :class="{ active: workspaces.state.activeSessionId === localId }"
-      @click="workspaces.openDraft(localId)"
+      :class="{ active: sessions.state.activeSessionId === localId }"
+      @click="sessions.openDraft(localId)"
     >
       <span class="dot dot-draft" />
       <span class="title">{{ DEFAULT_SESSION_TITLE }}</span>
@@ -24,7 +24,7 @@ const workspaces = useWorkspaceStore()
         circle
         :icon="IconDelete"
         aria-label="Discard draft"
-        @click="workspaces.discardDraft(localId)"
+        @click="sessions.discardDraft(localId)"
       />
     </el-tooltip>
   </li>

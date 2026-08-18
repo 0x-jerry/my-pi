@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
 import type { Workspace } from "@my-pi/shared"
-import { useWorkspaceStore, useSessionStore } from "../stores"
+import { useStore, useWorkspaceStore, useSessionStore } from "../stores"
 import { useWorkspaceNode } from "../hooks/workspace/useWorkspaceNode"
 import IconFolder from "~icons/hugeicons/folder-01"
 import IconFolderOpen from "~icons/hugeicons/folder-open"
@@ -13,11 +13,12 @@ import SessionItem from "./SessionItem.vue"
 import DraftItem from "./DraftItem.vue"
 
 const props = defineProps<{ ws: Workspace }>()
+const store = useStore()
 const workspaces = useWorkspaceStore()
 const sessions = useSessionStore()
 const { remove, newSession } = useWorkspaceNode()
 
-const isActive = computed(() => workspaces.state.activeWorkspaceId === props.ws.id)
+const isActive = computed(() => sessions.state.activeWorkspaceId === props.ws.id)
 /**
  * This node owns its own expand state (not derived from the active
  * workspace), so several nodes can be expanded at the same time.
@@ -44,7 +45,7 @@ function toggle(): void {
     void sessions
       .load(props.ws.id)
       .catch((err) => {
-        sessions.state.error = err instanceof Error ? err.message : String(err)
+        store.setError(err instanceof Error ? err.message : String(err))
       })
       .finally(() => {
         loading.value = false

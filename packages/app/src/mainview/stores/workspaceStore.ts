@@ -1,7 +1,20 @@
+import { reactive } from "vue"
 import { RpcEvent, RpcMethod, type RpcNotifications, type Workspace } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
-import type { AppState } from "./state"
+import type { DraftSession } from "./types"
 import type { RpcClient } from "../rpc/client"
+
+/**
+ * Workspace slice: the workspace list and the local draft placeholders.
+ * Owned by WorkspaceStore.
+ */
+function createWorkspaceState() {
+  return reactive({
+    workspaces: [] as Workspace[],
+    drafts: [] as DraftSession[],
+  })
+}
+export type WorkspaceStateSlice = ReturnType<typeof createWorkspaceState>
 
 /**
  * Workspace domain: loading the workspace list, creating a workspace from a
@@ -11,10 +24,17 @@ import type { RpcClient } from "../rpc/client"
  */
 export class WorkspaceStore {
   private readonly client: RpcClient
-  readonly state: AppState
+  readonly state: WorkspaceStateSlice
 
-  constructor(state: AppState, client: RpcClient, connection: ConnectionStore) {
-    this.state = state
+  /**
+   * Injected by the root facade: a workspace was confirmed removed (list
+   * re-fetched and the id is gone) — the root tears down session selection,
+   * caches, chat state and drafts across the owning stores.
+   */
+  onWorkspaceRemoved?: (workspaceId: string) => void
+
+  constructor(client: RpcClient, connection: ConnectionStore) {
+    this.state = createWorkspaceState()
     this.client = client
     connection.on(RpcEvent.workspaceUpdated, (p) => this.handleWorkspaceUpdated(p))
   }
@@ -41,10 +61,6 @@ export class WorkspaceStore {
     await this.client.call(RpcMethod.workspacesRemove, { id })
   }
 
-  async loadWorkspacesRpc(): Promise<void> {
-    await this.load()
-  }
-
   // ---- drafts (placeholder sessions created via the tree "+") ----
 
   private draftSeq = 0
@@ -56,20 +72,13 @@ export class WorkspaceStore {
     return localId
   }
 
-  /** Select a draft node without any server transcript load. */
-  openDraft(localId: string): void {
-    if (!this.isDraft(localId)) return
-    this.state.activeSessionId = localId
-  }
-
-  /** Drop a local placeholder (no server call). */
-  discardDraft(localId: string): void {
-    this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
-    if (this.state.activeSessionId === localId) this.state.activeSessionId = null
-  }
-
   isDraft(id: string): boolean {
     return this.state.drafts.some((d) => d.localId === id)
+  }
+
+  /** Drop a local placeholder from the list (no server call, no selection). */
+  removeDraft(localId: string): void {
+    this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
   }
 
   /** Drop all drafts that belong to a workspace (after it is removed). */
@@ -77,10 +86,6 @@ export class WorkspaceStore {
     this.state.drafts = this.state.drafts.filter(
       (d) => d.workspaceId !== workspaceId,
     )
-  }
-
-  clearDrafts(): void {
-    this.state.drafts = []
   }
 
   private async handleWorkspaceUpdated(
@@ -95,12 +100,6 @@ export class WorkspaceStore {
     // workspace is still present (future rename/reindex events) keep its
     // tree, session cache and drafts intact.
     if (this.state.workspaces.some((w) => w.id === workspaceId)) return
-    if (this.state.activeWorkspaceId === workspaceId) {
-      this.state.activeWorkspaceId = null
-      this.state.activeSessionId = null
-      this.state.sessions = []
-    }
-    delete this.state.sessionsByWorkspace[workspaceId]
-    this.clearDraftsOfWorkspace(workspaceId)
+    this.onWorkspaceRemoved?.(workspaceId)
   }
 }

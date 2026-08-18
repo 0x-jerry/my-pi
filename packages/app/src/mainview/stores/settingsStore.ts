@@ -1,8 +1,16 @@
+import { reactive } from "vue"
 import { RpcMethod, SETTING_KEYS, type SettingKey, type ThinkingLevel } from "@my-pi/shared"
 import type { AllSettings, SettingValue } from "@my-pi/core"
-import type { ConnectionStore } from "./connectionStore"
-import type { AppState } from "./state"
+import type { SettingsState } from "./types"
 import type { RpcClient } from "../rpc/client"
+
+/** Settings slice: the reactive settings map (cleared values are absent keys). Owned by SettingsStore. */
+function createSettingsState() {
+  return reactive({
+    settings: {} as SettingsState,
+  })
+}
+export type SettingsStateSlice = ReturnType<typeof createSettingsState>
 
 /** The three model-valued settings; `defaultThinkingLevel` is excluded. */
 type ModelSettingKey = Extract<SettingKey, "chatModel" | "defaultModel" | "titleModel">
@@ -24,10 +32,10 @@ type ModelValue = Exclude<SettingValue<ModelSettingKey>, null>
  */
 export class SettingsStore {
   private readonly client: RpcClient
-  readonly state: AppState
+  readonly state: SettingsStateSlice
 
-  constructor(state: AppState, client: RpcClient, _connection: ConnectionStore) {
-    this.state = state
+  constructor(client: RpcClient) {
+    this.state = createSettingsState()
     this.client = client
   }
 

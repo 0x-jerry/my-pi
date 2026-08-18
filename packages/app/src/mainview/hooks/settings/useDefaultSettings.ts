@@ -61,6 +61,17 @@ export function useDefaultSettings() {
       if (v !== backgroundModel.value) backgroundModel.value = v ?? null
     },
   )
+  watch(
+    () => settings.state.settings.defaultThinkingLevel,
+    (v) => {
+      // Mirrors the model watches: a cleared store value resets the local
+      // select back to the "default" sentinel.
+      if (v !== undefined && v !== thinking.value) thinking.value = v
+      if (v === undefined && thinking.value !== THINKING_DEFAULT) {
+        thinking.value = THINKING_DEFAULT
+      }
+    },
+  )
 
   return {
     ...modelOptions,

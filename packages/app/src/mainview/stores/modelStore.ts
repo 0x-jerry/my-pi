@@ -1,7 +1,15 @@
-import { RpcMethod, type ModelInfo } from "@my-pi/shared"
-import type { ConnectionStore } from "./connectionStore"
-import type { AppState } from "./state"
+import { reactive } from "vue"
+import { RpcMethod, type ModelInfo, type ProviderInfo } from "@my-pi/shared"
 import type { RpcClient } from "../rpc/client"
+
+/** Models/auth slice: provider list and per-provider model catalogs. Owned by ModelStore. */
+function createModelState() {
+  return reactive({
+    providers: [] as ProviderInfo[],
+    models: {} as Record<string, ModelInfo[]>,
+  })
+}
+export type ModelStateSlice = ReturnType<typeof createModelState>
 
 /**
  * Models/auth domain: provider list, available models per provider, and
@@ -10,10 +18,10 @@ import type { RpcClient } from "../rpc/client"
  */
 export class ModelStore {
   private readonly client: RpcClient
-  readonly state: AppState
+  readonly state: ModelStateSlice
 
-  constructor(state: AppState, client: RpcClient, _connection: ConnectionStore) {
-    this.state = state
+  constructor(client: RpcClient) {
+    this.state = createModelState()
     this.client = client
   }
 

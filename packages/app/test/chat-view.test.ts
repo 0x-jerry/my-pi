@@ -98,19 +98,15 @@ function fakeStore(overrides: Partial<FakeStoreState> = {}) {
     },
     chat: {
       state: chatState,
-      streamingFor: (id: string) => {
-        if (!chatState.streaming[id]) {
-          chatState.streaming[id] = {
-            status: "idle",
-            textBuf: "",
-            thinkingBuf: "",
-            parts: [],
-            activeTool: null,
-            pendingSend: null,
-          }
-        }
-        return chatState.streaming[id]
-      },
+      streamingFor: (id: string) =>
+        chatState.streaming[id] ?? {
+          status: "idle",
+          textBuf: "",
+          thinkingBuf: "",
+          parts: [],
+          activeTool: null,
+          pendingSend: null,
+        },
       sendMessage: vi.fn(async () => {}),
       steer: vi.fn(async () => {}),
       followUp: vi.fn(async () => {}),

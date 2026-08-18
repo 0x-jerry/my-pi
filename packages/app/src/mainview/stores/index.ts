@@ -1,7 +1,5 @@
-import { inject, type InjectionKey } from "vue"
-import type { CreateSessionInput, SessionInfo } from "@my-pi/shared"
+import { inject, reactive, type InjectionKey } from "vue"
 import type { RpcClient } from "../rpc/client"
-import { createState, type AppState } from "./state"
 import { ConnectionStore } from "./connectionStore"
 import { WorkspaceStore } from "./workspaceStore"
 import { SessionStore } from "./sessionStore"
@@ -10,7 +8,13 @@ import { ModelStore } from "./modelStore"
 import { SettingsStore } from "./settingsStore"
 import { PluginStore } from "./pluginStore"
 
-export type { AppState } from "./state"
+export type { ConnectionStateSlice } from "./connectionStore"
+export type { WorkspaceStateSlice } from "./workspaceStore"
+export type { SessionStateSlice } from "./sessionStore"
+export type { ChatStateSlice } from "./chatStore"
+export type { ModelStateSlice } from "./modelStore"
+export type { SettingsStateSlice } from "./settingsStore"
+export type { PluginStateSlice } from "./pluginStore"
 export type {
   ActiveToolState,
   DraftSession,
@@ -19,14 +23,27 @@ export type {
 } from "./types"
 
 /**
- * Root store: the composition root. It owns the shared reactive `state` and
- * the domain store instances, and it orchestrates the few cross-domain
- * workflows (refreshAll, openWorkspace, removeWorkspace, sendDraft). Most
- * operations are thin delegations to a single domain store, so consumers can
- * inject only the focused store they need via `useXStore()`.
+ * Root-owned state slice: the global error banner (boot failures, load
+ * errors, notification-handler rejections).
+ */
+function createRootState() {
+  return reactive({
+    error: null as string | null,
+  })
+}
+export type AppState = ReturnType<typeof createRootState>
+
+/**
+ * Root store: the composition root. Each domain store owns its own reactive
+ * state slice (declared in its own file) and its own operations — consumers
+ * call the focused store directly via `useXStore()`; this class does NOT wrap
+ * sub-store methods. It owns the global error banner and the few workflows
+ * that genuinely span stores (refreshAll, openWorkspace, removeWorkspace,
+ * sendDraft), plus the cross-store hook wiring (no cycles).
  */
 export class Store {
   readonly client: RpcClient
+  /** Root-owned state: the global error banner. */
   readonly state: AppState
   readonly connection: ConnectionStore
   readonly workspaces: WorkspaceStore
@@ -38,34 +55,39 @@ export class Store {
 
   constructor(client: RpcClient) {
     this.client = client
-    this.state = createState()
-    this.connection = new ConnectionStore(this.state, client)
-    this.workspaces = new WorkspaceStore(this.state, client, this.connection)
-    this.sessions = new SessionStore(this.state, client, this.connection)
-    this.chat = new ChatStore(this.state, client, this.connection)
-    this.models = new ModelStore(this.state, client, this.connection)
-    this.settings = new SettingsStore(this.state, client, this.connection)
-    this.plugins = new PluginStore(this.state, client, this.connection)
+    this.state = createRootState()
+    this.connection = new ConnectionStore(client)
+    this.workspaces = new WorkspaceStore(client, this.connection)
+    this.sessions = new SessionStore(client, this.workspaces)
+    this.chat = new ChatStore(client, this.connection, this.sessions)
+    this.models = new ModelStore(client)
+    this.settings = new SettingsStore(client)
+    this.plugins = new PluginStore(client, this.sessions)
 
-    // Streaming-settle / status changes should refresh the session list, and
-    // session rows may live in any workspace's cache (multi-node expansion).
-    this.chat.sessionsRefresh = (id) => this.sessions.scheduleForSession(id)
-    this.chat.sessionLookup = (id) => this.sessions.sessionById(id)
+    // Cross-store hooks (post-construction so nothing forms a cycle).
+    this.connection.setError = (message) => this.setError(message)
+    this.sessions.setError = (message) => this.setError(message)
+    // Deleted sessions / removed workspaces drop their chat state.
+    this.sessions.onSessionEvicted = (id) => this.chat.evictSession(id)
+    this.workspaces.onWorkspaceRemoved = (id) => {
+      this.sessions.clearWorkspace(id)
+      this.workspaces.clearDraftsOfWorkspace(id)
+    }
     client.onRefreshAll = () => void this.refreshAll()
 
     // Opening a session makes its workspace active; lazy-load that
     // workspace's plugins, matching openWorkspace's behavior. (Drafts do not
     // switch the active workspace — only real session selection does.)
     this.sessions.onWorkspaceActivated = (workspaceId: string): void => {
-      void this.loadPluginsForWorkspace(workspaceId).catch((err) => {
-        this.state.error = err instanceof Error ? err.message : String(err)
+      void this.plugins.loadForWorkspace(workspaceId).catch((err) => {
+        this.setError(err instanceof Error ? err.message : String(err))
       })
     }
   }
 
-  /** Start the connection; `refreshAll()` runs on first connect. */
-  init(): void {
-    this.connection.init()
+  /** Surface an error into the global banner (boot failures, load errors). */
+  setError(message: string): void {
+    this.state.error = message
   }
 
   // ---- cross-domain workflows ----
@@ -78,28 +100,33 @@ export class Store {
   async refreshAll(): Promise<void> {
     // Refresh every workspace whose sessions are cached (expanded nodes), plus
     // the active workspace even if it was never expanded yet.
-    const workspaceIds = new Set(Object.keys(this.state.sessionsByWorkspace))
-    if (this.state.activeWorkspaceId) workspaceIds.add(this.state.activeWorkspaceId)
+    const workspaceIds = new Set(
+      Object.keys(this.sessions.state.sessionsByWorkspace),
+    )
+    if (this.sessions.state.activeWorkspaceId) {
+      workspaceIds.add(this.sessions.state.activeWorkspaceId)
+    }
     await Promise.allSettled([
-      this.loadWorkspaces(),
-      this.loadProviders(),
-      this.loadPluginsGlobal(),
-      this.loadSettings(),
+      this.workspaces.load(),
+      this.models.loadProviders(),
+      this.plugins.loadGlobal(),
+      this.settings.load(),
       this.connection.loadPersistedConnection(),
-      ...[...workspaceIds].map((id) => this.loadSessions(id)),
-      this.state.activeSessionId && !this.isDraft(this.state.activeSessionId)
-        ? this.loadMessages(this.state.activeSessionId)
+      ...[...workspaceIds].map((id) => this.sessions.load(id)),
+      this.sessions.state.activeSessionId &&
+      !this.workspaces.isDraft(this.sessions.state.activeSessionId)
+        ? this.sessions.loadMessages(this.sessions.state.activeSessionId)
         : Promise.resolve(),
     ])
   }
 
   async openWorkspace(id: string): Promise<void> {
-    this.state.activeSessionId = null
+    this.sessions.state.activeSessionId = null
     // Re-point the active workspace and the flat alias immediately (the cache
     // may be empty until load resolves); the activation hook lazy-loads the
     // workspace's plugins.
     this.sessions.setActiveWorkspace(id)
-    await this.loadSessions(id)
+    await this.sessions.load(id)
   }
 
   async removeWorkspace(id: string): Promise<void> {
@@ -107,14 +134,9 @@ export class Store {
     // The server also emits workspace.updated on removal, so the event handler
     // performs the same cleanup; the explicit teardown here is an idempotent
     // safety net for when the event hasn't landed yet.
-    if (this.state.activeWorkspaceId === id) {
-      this.state.activeWorkspaceId = null
-      this.state.activeSessionId = null
-      this.state.sessions = []
-    }
-    delete this.state.sessionsByWorkspace[id]
+    this.sessions.clearWorkspace(id)
     this.workspaces.clearDraftsOfWorkspace(id)
-    await this.workspaces.loadWorkspacesRpc()
+    await this.workspaces.load()
   }
 
   /**
@@ -123,170 +145,29 @@ export class Store {
    * replaced by the persisted session node (createSession refetches the list).
    */
   async sendDraft(localId: string, text: string): Promise<void> {
-    const draft = this.state.drafts.find((d) => d.localId === localId)
+    const draft = this.workspaces.state.drafts.find(
+      (d) => d.localId === localId,
+    )
     if (!draft) throw new Error("Draft session not found")
     // A draft's session is created with the chat model. Bail before
     // converting the draft so the composer stays put (message intact) instead
     // of stranding the user on an empty real session with no model to run.
-    const chatModel = this.state.settings.chatModel
+    const chatModel = this.settings.state.settings.chatModel
     if (!chatModel) {
       throw new Error(
         "No model configured. Choose a chat model in Settings before starting a session.",
       )
     }
-    const session = await this.createSession({
+    const session = await this.sessions.createSession({
       workspaceId: draft.workspaceId,
       autoTitle: true,
       model: chatModel,
     })
-    this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
-    await this.openSession(session.id)
-    await this.sendMessage(session.id, text)
-  }
-
-  // ---- workspaces / drafts ----
-
-  loadWorkspaces(): Promise<void> {
-    return this.workspaces.load()
-  }
-  pickFolder(): Promise<string | null> {
-    return this.workspaces.pickFolder()
-  }
-  createWorkspace(name: string, path: string) {
-    return this.workspaces.createWorkspace(name, path)
-  }
-  startDraft(workspaceId: string): string {
-    return this.workspaces.startDraft(workspaceId)
-  }
-  openDraft(localId: string): void {
-    this.workspaces.openDraft(localId)
-  }
-  discardDraft(localId: string): void {
-    this.workspaces.discardDraft(localId)
-  }
-  isDraft(id: string): boolean {
-    return this.workspaces.isDraft(id)
-  }
-
-  // ---- sessions ----
-
-  loadSessions(workspaceId: string): Promise<void> {
-    return this.sessions.load(workspaceId)
-  }
-  loadMessages(sessionId: string): Promise<void> {
-    return this.sessions.loadMessages(sessionId)
-  }
-  createSession(input: CreateSessionInput): Promise<SessionInfo> {
-    return this.sessions.createSession(input)
-  }
-  deleteSession(id: string): Promise<void> {
-    return this.sessions.deleteSession(id)
-  }
-  forkSession(id: string, uptoSeq?: number): Promise<SessionInfo> {
-    return this.sessions.forkSession(id, uptoSeq)
-  }
-  openSession(id: string): Promise<void> {
-    return this.sessions.openSession(id)
-  }
-  updateSessionModel(
-    id: string,
-    model: { provider: string; id: string },
-  ): Promise<SessionInfo> {
-    return this.sessions.updateModel(id, model)
-  }
-
-  // ---- chat ----
-
-  sendMessage(sessionId: string, text: string): Promise<void> {
-    return this.chat.sendMessage(sessionId, text)
-  }
-  steer(sessionId: string, text: string): Promise<void> {
-    return this.chat.steer(sessionId, text)
-  }
-  followUp(sessionId: string, text: string): Promise<void> {
-    return this.chat.followUp(sessionId, text)
-  }
-  abort(sessionId: string): Promise<void> {
-    return this.chat.abort(sessionId)
-  }
-
-  // ---- models / auth ----
-
-  loadProviders(): Promise<void> {
-    return this.models.loadProviders()
-  }
-  listModels(providerId: string) {
-    return this.models.listModels(providerId)
-  }
-  loginApiKey(providerId: string, apiKey: string): Promise<void> {
-    return this.models.loginApiKey(providerId, apiKey)
-  }
-  logout(providerId: string): Promise<void> {
-    return this.models.logout(providerId)
-  }
-
-  // ---- plugins ----
-
-  loadPluginsGlobal(): Promise<void> {
-    return this.plugins.loadGlobal()
-  }
-  loadPluginsForWorkspace(workspaceId: string): Promise<void> {
-    return this.plugins.loadForWorkspace(workspaceId)
-  }
-  addPlugin(input: {
-    source: string
-    scope?: "global" | "workspace"
-    workspaceId?: string
-    name?: string
-  }): Promise<void> {
-    return this.plugins.add(input)
-  }
-  removePlugin(id: string): Promise<void> {
-    return this.plugins.remove(id)
-  }
-  setPluginEnabled(id: string, enabled: boolean): Promise<void> {
-    return this.plugins.setEnabled(id, enabled)
-  }
-
-  // ---- settings ----
-
-  loadSettings(): Promise<void> {
-    return this.settings.load()
-  }
-  applyConnection(config: {
-    endpoint: string
-    token: string
-  }): Promise<void> {
-    return this.connection.applyConnection(config)
-  }
-  setDefaultModel(model: { provider: string; id: string }): Promise<void> {
-    return this.settings.setDefaultModel(model)
-  }
-  setChatModel(model: { provider: string; id: string } | null): Promise<void> {
-    return this.settings.setChatModel(model)
-  }
-  setTitleModel(model: { provider: string; id: string } | null): Promise<void> {
-    return this.settings.setTitleModel(model)
-  }
-  setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"): Promise<void> {
-    return this.settings.setDefaultThinkingLevel(level)
-  }
-
-  // ---- selectors ----
-
-  messagesFor(sessionId: string) {
-    return this.state.messagesBySession[sessionId] ?? []
-  }
-
-  streamingFor(sessionId: string) {
-    return this.chat.streamingFor(sessionId)
-  }
-
-  /** Active session info or null. */
-  get activeSession(): SessionInfo | null {
-    const id = this.state.activeSessionId
-    if (!id) return null
-    return this.state.sessions.find((s) => s.id === id) ?? null
+    this.workspaces.state.drafts = this.workspaces.state.drafts.filter(
+      (d) => d.localId !== localId,
+    )
+    await this.sessions.openSession(session.id)
+    await this.chat.sendMessage(session.id, text)
   }
 }
 

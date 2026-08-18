@@ -1,39 +1,41 @@
+import { reactive } from "vue"
 import {
   RpcEvent,
   RpcMethod,
   type RpcNotifications,
-  type SessionInfo,
+  type UsageSummary,
 } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
-import type { AppState } from "./state"
+import type { SessionStore } from "./sessionStore"
 import type { RpcClient } from "../rpc/client"
-import { emptyStreaming } from "./types"
+import { emptyStreaming, type StreamingState } from "./types"
+
+/** Chat slice: per-session streaming state and usage. Owned by ChatStore. */
+function createChatState() {
+  return reactive({
+    streaming: {} as Record<string, StreamingState>,
+    lastUsage: {} as Record<string, UsageSummary | undefined>,
+  })
+}
+export type ChatStateSlice = ReturnType<typeof createChatState>
 
 /**
- * Chat domain: per-session streaming state, the send / steer / follow-up /
- * abort actions, and the live notification handlers (status/delta/tool/message/
- * run/title) that mutate the shared state.
+ * Chat domain: per-session streaming state and usage, the send / steer /
+ * follow-up / abort actions, and the live notification handlers
+ * (status/delta/tool/message/run/title). Transcript writes go through the
+ * session store's `upsertMessage`/`reconcileMessages` primitives and session
+ * rows come from `sessionById` / `scheduleForSession`, so each slice keeps a
+ * single owner and no hook can be left unwired.
  */
 export class ChatStore {
   private readonly client: RpcClient
-  readonly state: AppState
+  private readonly sessions: SessionStore
+  readonly state: ChatStateSlice
 
-  /**
-   * Set by the root facade after all stores exist: refetch the active
-   * workspace's sessions when a run settles or status changes.
-   */
-  sessionsRefresh?: (sessionId: string) => void
-
-  /**
-   * Set by the root facade: resolve a session row from any workspace's cache
-   * (several tree nodes can be expanded, so the row may not belong to the
-   * active workspace). Falls back to the active list when unset.
-   */
-  sessionLookup?: (sessionId: string) => SessionInfo | null
-
-  constructor(state: AppState, client: RpcClient, connection: ConnectionStore) {
-    this.state = state
+  constructor(client: RpcClient, connection: ConnectionStore, sessions: SessionStore) {
+    this.state = createChatState()
     this.client = client
+    this.sessions = sessions
     connection.on(RpcEvent.sessionStatus, (p) => this.handleStatus(p))
     connection.on(RpcEvent.sessionDelta, (p) => this.handleDelta(p))
     connection.on(RpcEvent.sessionToolStart, (p) => this.handleToolStart(p))
@@ -53,6 +55,23 @@ export class ChatStore {
     return st
   }
 
+  /**
+   * Pure read of a session's streaming state. Never mutates state here —
+   * this getter runs inside computeds/templates, so writing would be a
+   * mutation-during-render anti-pattern. Entries are created eagerly by
+   * `sendMessage` and the notification handlers; absent entries read as a
+   * stable idle snapshot.
+   */
+  streamingFor(sessionId: string) {
+    return this.state.streaming[sessionId] ?? emptyStreaming()
+  }
+
+  /** Drop all per-session chat state (deleted sessions, removed workspaces). */
+  evictSession(sessionId: string): void {
+    delete this.state.streaming[sessionId]
+    delete this.state.lastUsage[sessionId]
+  }
+
   async sendMessage(sessionId: string, text: string): Promise<void> {
     const st = this.ensureStreaming(sessionId)
     st.pendingSend = text
@@ -68,10 +87,6 @@ export class ChatStore {
 
   async steer(sessionId: string, text: string): Promise<void> {
     await this.client.call(RpcMethod.chatSteer, { sessionId, text })
-  }
-
-  streamingFor(sessionId: string) {
-    return this.ensureStreaming(sessionId)
   }
 
   async followUp(sessionId: string, text: string): Promise<void> {
@@ -98,14 +113,12 @@ export class ChatStore {
     }
     // Reflect the status locally right away (no RPC); the persisted row only
     // changes at settle, so a real refetch happens there (see run_end).
-    const local = this.sessionLookup
-      ? this.sessionLookup(sessionId)
-      : this.state.sessions.find((s) => s.id === sessionId)
+    const local = this.sessions.sessionById(sessionId)
     if (local) {
       local.status = status
     }
     if (status !== "running") {
-      this.sessionsRefresh?.(sessionId)
+      this.sessions.scheduleForSession(sessionId)
     }
   }
 
@@ -149,13 +162,8 @@ export class ChatStore {
 
   private handleMessageEnd(p: RpcNotifications["session.message_end"]): void {
     const { sessionId, message } = p
-    const current = this.state.messagesBySession[sessionId]
-    const list = current ?? []
-    const idx = list.findIndex((m) => m.id === message.id)
-    if (idx >= 0) list[idx] = message
-    else list.push(message)
-    if (!current) this.state.messagesBySession[sessionId] = list
     // The persisted assistant message supersedes the streaming placeholder.
+    this.sessions.upsertMessage(sessionId, message)
     const st = this.state.streaming[sessionId]
     if (message.role === "assistant" && st) {
       st.textBuf = ""
@@ -167,10 +175,7 @@ export class ChatStore {
     const { sessionId, messages, usage, error } = p
     // Reconcile by stable id: makes message_end + run_end idempotent and
     // supersedes any optimistic/pending UI state.
-    const current = this.state.messagesBySession[sessionId] ?? []
-    const byId = new Map(current.map((m) => [m.id, m]))
-    for (const m of messages) byId.set(m.id, m)
-    this.state.messagesBySession[sessionId] = [...byId.values()]
+    this.sessions.reconcileMessages(sessionId, messages)
 
     // A re-settle of an already-persisted run pushes all-zero usage; don't let
     // it clobber the last real run's numbers.
@@ -184,7 +189,7 @@ export class ChatStore {
     st.parts = []
     st.activeTool = null
     st.error = error
-    this.sessionsRefresh?.(sessionId)
+    this.sessions.scheduleForSession(sessionId)
   }
 
   /** LLM auto-title landed: patch the row in place (no refetch needed). */
@@ -192,9 +197,7 @@ export class ChatStore {
     p: RpcNotifications["session.title_updated"],
   ): void {
     const { sessionId, title, updatedAt } = p
-    const row = this.sessionLookup
-      ? this.sessionLookup(sessionId)
-      : this.state.sessions.find((s) => s.id === sessionId)
+    const row = this.sessions.sessionById(sessionId)
     if (row) {
       row.title = title
       // Keep recency in sync with the server (updateTitle bumps updated_at).

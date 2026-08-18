@@ -1,7 +1,16 @@
-import { RpcMethod } from "@my-pi/shared"
-import type { ConnectionStore } from "./connectionStore"
-import type { AppState } from "./state"
+import { reactive } from "vue"
+import { RpcMethod, type PluginInfo } from "@my-pi/shared"
+import type { SessionStore } from "./sessionStore"
 import type { RpcClient } from "../rpc/client"
+
+/** Plugins slice: global and workspace-scoped plugin lists. Owned by PluginStore. */
+function createPluginState() {
+  return reactive({
+    pluginsGlobal: [] as PluginInfo[],
+    pluginsWorkspace: {} as Record<string, PluginInfo[]>,
+  })
+}
+export type PluginStateSlice = ReturnType<typeof createPluginState>
 
 /**
  * Plugins domain: global and workspace-scoped plugin lists plus add/remove/
@@ -10,11 +19,13 @@ import type { RpcClient } from "../rpc/client"
  */
 export class PluginStore {
   private readonly client: RpcClient
-  readonly state: AppState
+  private readonly sessions: SessionStore
+  readonly state: PluginStateSlice
 
-  constructor(state: AppState, client: RpcClient, _connection: ConnectionStore) {
-    this.state = state
+  constructor(client: RpcClient, sessions: SessionStore) {
+    this.state = createPluginState()
     this.client = client
+    this.sessions = sessions
   }
 
   async loadGlobal(): Promise<void> {
@@ -30,7 +41,7 @@ export class PluginStore {
 
   private async refresh(): Promise<void> {
     await this.loadGlobal()
-    const wsId = this.state.activeWorkspaceId
+    const wsId = this.sessions.state.activeWorkspaceId
     if (wsId) await this.loadForWorkspace(wsId)
   }
 

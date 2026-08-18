@@ -36,7 +36,7 @@ export function useWorkspaceNode() {
    * when the first message is sent (see store.sendDraft).
    */
   async function newSession(ws: Workspace): Promise<void> {
-    if (store.state.activeWorkspaceId !== ws.id) {
+    if (store.sessions.state.activeWorkspaceId !== ws.id) {
       try {
         await store.openWorkspace(ws.id)
       } catch (err) {
@@ -44,7 +44,7 @@ export function useWorkspaceNode() {
         return
       }
     }
-    store.openDraft(store.startDraft(ws.id))
+    store.sessions.openDraft(store.workspaces.startDraft(ws.id))
   }
 
   return { open, remove, newSession }
