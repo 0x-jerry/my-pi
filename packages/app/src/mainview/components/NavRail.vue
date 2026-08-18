@@ -1,34 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue"
-import { useRoute, useRouter } from "vue-router"
 import IconFolder from "~icons/hugeicons/folder-01"
 import IconSettings from "~icons/hugeicons/settings-01"
-import { useStore } from "../store"
+import { useNavigation } from "../hooks/workspace/useNavigation"
+import { useConnectionState } from "../hooks/workspace/useConnectionState"
 
-const store = useStore()
-const route = useRoute()
-const router = useRouter()
-
-/** Logo "Pi" color mirrors the connection state (see store connectionState). */
-const logoClass = computed(() => {
-  switch (store.state.connectionState) {
-    case "connected":
-      return "logo-ok"
-    case "connecting":
-    case "reconnecting":
-      return "logo-warn"
-    default:
-      return "logo-offline"
-  }
-})
-
-function isActive(name: string): boolean {
-  return route.name === name
-}
-
-function go(path: string) {
-  void router.push(path)
-}
+const { logoClass } = useConnectionState()
+const { isActive, go } = useNavigation()
 </script>
 
 <template>

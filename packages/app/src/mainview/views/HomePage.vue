@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import WorkspaceTree from "../components/WorkspaceTree.vue"
 import ChatPage from "./ChatPage.vue"
-import { useStore } from "../store"
+import { useSessionStore } from "../stores"
 
-const store = useStore()
+const sessions = useSessionStore()
 </script>
 
 <template>
-  <div v-if="store.state.activeWorkspaceId" class="home">
+  <div class="home">
     <WorkspaceTree />
-    <main class="content">
+    <main v-if="sessions.state.activeWorkspaceId" class="content">
       <ChatPage />
     </main>
-  </div>
-  <div v-else class="no-workspace">
-    <el-empty description="Open or create a workspace to begin." :image-size="96" />
+    <div v-else class="no-workspace">
+      <el-empty
+        description="Open a workspace on the left, or add one to begin."
+        :image-size="96"
+      />
+    </div>
   </div>
 </template>
 

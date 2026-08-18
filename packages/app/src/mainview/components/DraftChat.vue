@@ -1,33 +1,11 @@
 <script setup lang="ts">
-import { ref } from "vue"
-import { ElMessage } from "element-plus"
 import { DEFAULT_SESSION_TITLE } from "@my-pi/shared"
 import IconTelegram from "~icons/hugeicons/telegram"
-import { useStore } from "../store"
+import { useDraftChat } from "../hooks/chat/useDraftChat"
 
 const props = defineProps<{ draftId: string | null }>()
 
-const store = useStore()
-
-const input = ref("")
-const sending = ref(false)
-
-async function send() {
-  const text = input.value.trim()
-  if (!text || sending.value || !props.draftId) return
-  sending.value = true
-  input.value = ""
-  try {
-    // Creates the real session (auto-titled after this run), opens it, and
-    // sends the first prompt; ChatPage then swaps to the full ChatView.
-    await store.sendDraft(props.draftId, text)
-  } catch (err) {
-    input.value = text
-    ElMessage.error(err instanceof Error ? err.message : String(err))
-  } finally {
-    sending.value = false
-  }
-}
+const { input, sending, send } = useDraftChat(() => props.draftId)
 </script>
 
 <template>

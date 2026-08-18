@@ -1,15 +1,9 @@
 <script setup lang="ts">
-import { computed } from "vue"
 import ChatView from "../components/ChatView.vue"
 import DraftChat from "../components/DraftChat.vue"
-import { useStore } from "../store"
+import { useActiveChat } from "../hooks/chat/useActiveChat"
 
-const store = useStore()
-
-const activeSessionId = computed(() => store.state.activeSessionId)
-const isDraft = computed(
-  () => activeSessionId.value !== null && store.isDraft(activeSessionId.value),
-)
+const { activeSessionId, isDraft } = useActiveChat()
 </script>
 
 <template>

@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { ref } from "vue"
-import type { ModelInfo, ProviderInfo } from "@my-pi/shared"
 import IconModel from "~icons/hugeicons/ai-chat-01"
 import IconLogin from "~icons/hugeicons/login-01"
 import IconLogout from "~icons/hugeicons/logout-01"
 import IconCheck from "~icons/hugeicons/checkmark-circle-01"
-import { useStore } from "../store"
+import { useModelPicker } from "../hooks/picks/useModelPicker"
 
 const props = defineProps<{
   modelValue: { provider: string; id: string } | null
@@ -14,99 +12,27 @@ const emit = defineEmits<{
   (e: "update:modelValue", v: { provider: string; id: string } | null): void
 }>()
 
-const store = useStore()
-
-const visible = ref(false)
-const selectedProvider = ref<string | null>(null)
-const selectedModel = ref<ModelInfo | null>(null)
-const models = ref<ModelInfo[]>([])
-const apiKey = ref("")
-const loading = ref(false)
-const error = ref<string | null>(null)
-
-function open() {
-  error.value = null
-  selectedProvider.value = props.modelValue?.provider ?? null
-  selectedModel.value = null
-  models.value = []
-  apiKey.value = "" // never carry a key across dialog opens / provider switches
-  visible.value = true
-  if (selectedProvider.value) void loadModels(selectedProvider.value)
-}
-
-async function selectProvider(providerId: string) {
-  selectedProvider.value = providerId
-  selectedModel.value = null
-  apiKey.value = "" // a key is scoped to one provider; don't save it against another
-  await loadModels(providerId)
-}
-
-async function loadModels(providerId: string) {
-  loading.value = true
-  error.value = null
-  try {
-    models.value = await store.listModels(providerId)
-    // Re-select the model currently configured for this provider, if any.
-    const cur = props.modelValue
-    if (cur && cur.provider === providerId) {
-      const match = models.value.find((m) => m.id === cur.id)
-      if (match) selectedModel.value = match
-    }
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-    models.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
-function onModelChange(value: string) {
-  const model = models.value.find((m) => m.id === value)
-  selectedModel.value = model ?? null
-}
-
-function confirm() {
-  if (!selectedProvider.value || !selectedModel.value) return
-  emit("update:modelValue", {
-    provider: selectedModel.value.providerId,
-    id: selectedModel.value.id,
-  })
-  visible.value = false
-}
-
-function clear() {
-  emit("update:modelValue", null)
-  visible.value = false
-}
-
-async function login() {
-  if (!selectedProvider.value || !apiKey.value) return
-  error.value = null
-  try {
-    await store.loginApiKey(selectedProvider.value, apiKey.value)
-    apiKey.value = ""
-    await loadModels(selectedProvider.value)
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  }
-}
-
-async function logout(providerId: string) {
-  error.value = null
-  try {
-    await store.logout(providerId)
-    if (selectedProvider.value === providerId) {
-      models.value = []
-      selectedModel.value = null
-    }
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  }
-}
-
-function providerStatus(p: ProviderInfo): string {
-  return p.authConfigured ? "auth ✓" : "no key"
-}
+const {
+  visible,
+  selectedProvider,
+  selectedModel,
+  models,
+  apiKey,
+  loading,
+  error,
+  providers,
+  open,
+  selectProvider,
+  onModelChange,
+  confirm,
+  clear,
+  login,
+  logout,
+  providerStatus,
+} = useModelPicker(
+  () => props.modelValue,
+  (v) => emit("update:modelValue", v),
+)
 </script>
 
 <template>
@@ -133,7 +59,7 @@ function providerStatus(p: ProviderInfo): string {
             filterable
             @change="selectProvider"
           >
-            <el-option v-for="p in store.state.providers" :key="p.id" :value="p.id">
+            <el-option v-for="p in providers" :key="p.id" :value="p.id">
               <span class="prov-name">{{ p.name }}</span>
               <el-tag
                 size="small"

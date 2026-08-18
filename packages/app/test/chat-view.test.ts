@@ -39,9 +39,7 @@ function message(overrides: Partial<StoredMessage> = {}): StoredMessage {
   }
 }
 
-interface FakeStoreState {
-  sessions: SessionInfo[]
-  lastUsage: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number }>
+interface FakeChatState {
   streaming: Record<string, {
     status: "idle" | "running" | "stopped" | "error"
     error?: string
@@ -51,40 +49,65 @@ interface FakeStoreState {
     activeTool: { toolName: string; args: unknown } | null
     pendingSend: string | null
   }>
+  lastUsage: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number }>
+}
+
+interface FakeStoreState {
+  sessions: SessionInfo[]
   messagesBySession: Record<string, StoredMessage[]>
+  chat: Partial<FakeChatState>
 }
 
 function fakeStore(overrides: Partial<FakeStoreState> = {}) {
-  const state = reactive({
+  // The refactored store exposes focused sub-stores: consumers read sessions
+  // (list + transcripts) and chat (streaming + usage) separately.
+  const sessionsState = reactive({
     sessions: [session()],
-    lastUsage: {},
-    streaming: {},
     messagesBySession: {},
-    ...overrides,
-  }) as unknown as FakeStoreState
+    ...(overrides.sessions !== undefined
+      ? { sessions: overrides.sessions }
+      : {}),
+    ...(overrides.messagesBySession !== undefined
+      ? { messagesBySession: overrides.messagesBySession }
+      : {}),
+  })
+  const chatState = reactive({
+    streaming: {},
+    lastUsage: {},
+    ...(overrides.chat?.streaming !== undefined
+      ? { streaming: overrides.chat.streaming }
+      : {}),
+    ...(overrides.chat?.lastUsage !== undefined
+      ? { lastUsage: overrides.chat.lastUsage }
+      : {}),
+  })
 
   const store = {
-    state,
-    messagesFor: (id: string) => state.messagesBySession[id] ?? [],
-    streamingFor: (id: string) => {
-      if (!state.streaming[id]) {
-        state.streaming[id] = {
-          status: "idle",
-          textBuf: "",
-          thinkingBuf: "",
-          parts: [],
-          activeTool: null,
-          pendingSend: null,
-        }
-      }
-      return state.streaming[id]
+    sessions: {
+      state: sessionsState,
+      forkSession: vi.fn(async () => ({ id: "fork1" })),
+      openSession: vi.fn(async () => {}),
     },
-    sendMessage: vi.fn(async () => {}),
-    steer: vi.fn(async () => {}),
-    followUp: vi.fn(async () => {}),
-    abort: vi.fn(async () => {}),
-    forkSession: vi.fn(async () => ({ id: "fork1" })),
-    openSession: vi.fn(async () => {}),
+    chat: {
+      state: chatState,
+      streamingFor: (id: string) => {
+        if (!chatState.streaming[id]) {
+          chatState.streaming[id] = {
+            status: "idle",
+            textBuf: "",
+            thinkingBuf: "",
+            parts: [],
+            activeTool: null,
+            pendingSend: null,
+          }
+        }
+        return chatState.streaming[id]
+      },
+      sendMessage: vi.fn(async () => {}),
+      steer: vi.fn(async () => {}),
+      followUp: vi.fn(async () => {}),
+      abort: vi.fn(async () => {}),
+    },
   }
   return store
 }
@@ -102,7 +125,7 @@ function mountChat(store: ReturnType<typeof fakeStore>) {
 describe("ChatView", () => {
   test("renders persisted messages: text, thinking, toolCall, toolResult, image", () => {
     const store = fakeStore()
-    store.state.messagesBySession.s1 = [
+    store.sessions.state.messagesBySession.s1 = [
       message({
         id: "m-s1-1",
         role: "user",
@@ -143,7 +166,7 @@ describe("ChatView", () => {
 
   test("renders images as data URIs", () => {
     const store = fakeStore()
-    store.state.messagesBySession.s1 = [
+    store.sessions.state.messagesBySession.s1 = [
       message({
         id: "m-s1-1",
         role: "user",
@@ -161,7 +184,7 @@ describe("ChatView", () => {
 
   test("streams live text, thinking and active tool while running", async () => {
     const store = fakeStore()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "streaming…",
       thinkingBuf: "thinking…",
@@ -181,7 +204,7 @@ describe("ChatView", () => {
 
   test("abort button calls store.abort with the session id", async () => {
     const store = fakeStore()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "",
       thinkingBuf: "",
@@ -191,7 +214,7 @@ describe("ChatView", () => {
     }
     const wrapper = mountChat(store)
     await wrapper.find("button.el-button--danger").trigger("click")
-    expect(store.abort).toHaveBeenCalledWith("s1")
+    expect(store.chat.abort).toHaveBeenCalledWith("s1")
   })
 
   test("send calls store.sendMessage and clears the input", async () => {
@@ -201,13 +224,13 @@ describe("ChatView", () => {
     await textarea.setValue("hello pi")
     await wrapper.find("button.el-button--primary").trigger("click")
 
-    expect(store.sendMessage).toHaveBeenCalledWith("s1", "hello pi")
+    expect(store.chat.sendMessage).toHaveBeenCalledWith("s1", "hello pi")
     expect((textarea.element as HTMLTextAreaElement).value).toBe("")
   })
 
   test("send is disabled while streaming", async () => {
     const store = fakeStore()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "…",
       thinkingBuf: "",
@@ -222,7 +245,7 @@ describe("ChatView", () => {
 
   test("shows last-run usage in the footer", () => {
     const store = fakeStore()
-    store.state.lastUsage.s1 = {
+    store.chat.state.lastUsage.s1 = {
       input: 10,
       output: 20,
       cacheRead: 5,
@@ -236,7 +259,7 @@ describe("ChatView", () => {
 
   test("surfaces the streaming error banner", () => {
     const store = fakeStore()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "error",
       error: "model unavailable",
       textBuf: "",
@@ -257,7 +280,7 @@ describe("ChatView", () => {
 
   test("empty hint is hidden during thinking-only streaming", () => {
     const store = fakeStore()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       thinkingBuf: "thinking…",
       textBuf: "",
@@ -272,7 +295,7 @@ describe("ChatView", () => {
 
   test("renders completed streamed parts frozen at tool boundaries", () => {
     const store = fakeStore()
-    store.state.streaming.s1 = {
+    store.chat.state.streaming.s1 = {
       status: "running",
       textBuf: "second part…",
       thinkingBuf: "",
@@ -288,7 +311,7 @@ describe("ChatView", () => {
 
   test("renders tool-result images as data URIs", () => {
     const store = fakeStore()
-    store.state.messagesBySession.s1 = [
+    store.sessions.state.messagesBySession.s1 = [
       message({
         id: "m-s1-1",
         role: "toolResult",
