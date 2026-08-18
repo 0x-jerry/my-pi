@@ -96,8 +96,8 @@ export class TitleService {
 			// Titling model: explicit titleModel, else the background-task model
 			// (settings.defaultModel), else fall back to the session's own model.
 			const titleModel =
-				this.settings.get<{ provider: string; id: string }>("titleModel") ??
-				this.settings.get<{ provider: string; id: string }>("defaultModel") ??
+				this.settings.get("titleModel") ??
+				this.settings.get("defaultModel") ??
 				(session.modelProvider && session.modelId
 					? { provider: session.modelProvider, id: session.modelId }
 					: null);

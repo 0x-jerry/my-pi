@@ -109,10 +109,11 @@ export class SessionService {
 		// Sessions run on the chat model by default (per-session override wins).
 		const model =
 			input.model ??
-			this.settings.get<{ provider: string; id: string }>("chatModel");
+			this.settings.get("chatModel");
 		const thinkingLevel =
 			input.thinkingLevel ??
-			this.settings.get<ThinkingLevel>("defaultThinkingLevel");
+			this.settings.get("defaultThinkingLevel") ??
+			undefined;
 		const now = Date.now();
 		const row: SessionRow = {
 			id: randomUUID(),

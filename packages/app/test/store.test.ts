@@ -104,12 +104,10 @@ describe("Store", () => {
         { id: "anthropic", name: "Anthropic", authConfigured: true },
       ],
       [RpcMethod.pluginsList]: () => [],
-      [RpcMethod.settingsGet]: (p: { key: string }) =>
-        p.key === "defaultModel"
-          ? { provider: "anthropic", id: "claude" }
-          : p.key === "defaultThinkingLevel"
-            ? "high"
-            : undefined,
+      [RpcMethod.settingsGetAll]: () => ({
+        defaultModel: { provider: "anthropic", id: "claude" },
+        defaultThinkingLevel: "high",
+      }),
     })
     client.onRefreshAll?.()
     await flush()
@@ -402,6 +400,24 @@ describe("Store", () => {
     expect(client.calls.every((c) => c.method === RpcMethod.settingsSet)).toBe(true)
   })
 
+  test("settings load applies the server-validated snapshot", async () => {
+    const { store } = setup({
+      [RpcMethod.settingsGetAll]: () => ({
+        chatModel: { provider: "a", id: "b" },
+        defaultModel: null, // stored-but-cleared -> absent
+        titleModel: { provider: "a", id: "t" },
+        defaultThinkingLevel: "high",
+        unknownKey: 123, // not a managed key -> never looked up
+      }),
+    })
+    await store.loadSettings()
+    expect(store.state.settings.chatModel).toEqual({ provider: "a", id: "b" })
+    expect(store.state.settings.defaultModel).toBeUndefined()
+    expect(store.state.settings.titleModel).toEqual({ provider: "a", id: "t" })
+    expect(store.state.settings.defaultThinkingLevel).toBe("high")
+    expect(Object.keys(store.state.settings)).not.toContain("unknownKey")
+  })
+
   test("refreshAll re-syncs the active workspace sessions and session transcript", async () => {
     const s = makeSession()
     const m = makeMessage()
@@ -409,7 +425,7 @@ describe("Store", () => {
       [RpcMethod.workspacesList]: () => [makeWorkspace()],
       [RpcMethod.modelsProviders]: () => [],
       [RpcMethod.pluginsList]: () => [],
-      [RpcMethod.settingsGet]: () => undefined,
+      [RpcMethod.settingsGetAll]: () => ({}),
       [RpcMethod.sessionsList]: () => [s],
       [RpcMethod.sessionsMessages]: () => [m],
     })
@@ -592,7 +608,7 @@ describe("Store", () => {
       [RpcMethod.workspacesList]: () => [makeWorkspace()],
       [RpcMethod.modelsProviders]: () => [],
       [RpcMethod.pluginsList]: () => [],
-      [RpcMethod.settingsGet]: () => undefined,
+      [RpcMethod.settingsGetAll]: () => ({}),
       [RpcMethod.sessionsList]: () => [s],
     })
     store.state.activeWorkspaceId = "w1"

@@ -113,6 +113,7 @@ export function registerRpcMethods(server: JsonRpcServer, app: CoreApp): void {
 		const q = params(p, false);
 		return app.settings.get(q.key, q.fallback);
 	});
+	server.register(RpcMethod.settingsGetAll, () => app.settings.all());
 	server.register(RpcMethod.settingsSet, (p) => {
 		const q = params(p);
 		return app.settings.set(q.key, q.value);

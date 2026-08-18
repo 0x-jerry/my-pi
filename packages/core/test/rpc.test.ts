@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { RpcMethod } from "@my-pi/shared";
+import { openDatabase } from "../src/db/connection";
+import { migrate } from "../src/db/migrations";
+import { SettingsRepo } from "../src/db/repos";
+import { SettingsService } from "../src/settings/settings-service";
 import { JsonRpcServer, RpcParamsError } from "../src/rpc/server";
 
 let server: JsonRpcServer | undefined;
@@ -227,5 +231,57 @@ describe("JsonRpcServer", () => {
 		const port = await startServer();
 		const res = await fetch(`http://127.0.0.1:${port}/other`);
 		expect(res.status).toBe(404);
+	});
+
+	test("settings.getAll snapshots strict-serviced settings over the wire", async () => {
+		const db = openDatabase(":memory:");
+		migrate(db);
+		const settings = new SettingsService(new SettingsRepo(db));
+		// Mirror the wiring in rpc/methods.ts for the settings trio.
+		server = new JsonRpcServer({ port: 0 });
+		server.register(RpcMethod.settingsGetAll, () => settings.all());
+		server.register(RpcMethod.settingsGet, (p: any) =>
+			settings.get(p.key, p.fallback),
+		);
+		server.register(RpcMethod.settingsSet, (p: any) =>
+			settings.set(p.key, p.value),
+		);
+		const port = await server.start();
+		const ws = await connect(port);
+
+		request(ws, 1, "settings.set", {
+			key: "chatModel",
+			value: { provider: "anthropic", id: "claude" },
+		});
+		let msg = (await nextMessage(ws)) as {
+			result: unknown;
+			error?: { code: number; message: string };
+		};
+		expect(msg.error).toBeUndefined();
+		expect(msg.result).toBeNull(); // void set
+
+		// getAll takes no params (must not require them).
+		request(ws, 2, "settings.getAll");
+		msg = (await nextMessage(ws)) as {
+			result: unknown;
+			error?: { code: number; message: string };
+		};
+		expect(msg.error).toBeUndefined();
+		expect(msg.result).toEqual({ chatModel: { provider: "anthropic", id: "claude" } });
+
+		// Unknown key → strict set rejects with a ServerError, nothing stored.
+		request(ws, 3, "settings.set", { key: "nope", value: 1 });
+		msg = (await nextMessage(ws)) as {
+			result: unknown;
+			error?: { code: number; message: string };
+		};
+		expect(msg.error?.code).toBe(-32000);
+		expect(msg.error?.message).toMatch(/unknown settings key/i);
+		expect(settings.all()).toEqual({
+			chatModel: { provider: "anthropic", id: "claude" },
+		});
+
+		ws.close();
+		db.close();
 	});
 });

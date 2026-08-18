@@ -7,6 +7,14 @@ export { registerRpcMethods } from "./rpc/methods";
 export { WorkspaceService } from "./workspaces/workspace-service";
 export { SessionService, toSessionInfo, type ResumePayload } from "./sessions/session-service";
 export { SettingsService } from "./settings/settings-service";
+export {
+	settingSchemas,
+	getSettingSchema,
+	SettingsValidationError,
+	type AllSettings,
+	type SettingKey,
+	type SettingValue,
+} from "./settings/settings-schema";
 export { PluginService, type BuiltinPlugin } from "./plugins/plugin-service";
 export { builtinPlugins } from "./plugins/builtin";
 export { AgentPool, type AgentPoolDeps } from "./agents/agent-pool";

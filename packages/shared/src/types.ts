@@ -2,14 +2,31 @@
 
 export type SessionStatus = "idle" | "running" | "stopped" | "error";
 
-export type ThinkingLevel =
-	| "off"
-	| "minimal"
-	| "low"
-	| "medium"
-	| "high"
-	| "xhigh"
-	| "max";
+export const THINKING_LEVELS = [
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max",
+] as const;
+
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/**
+ * Every settings key the app and core recognize (closed map; core validates
+ * values against per-key schemas). Single source of truth for the RPC
+ * contract and the core schema map — keep in sync with both.
+ */
+export const SETTING_KEYS = [
+	"chatModel",
+	"defaultModel",
+	"titleModel",
+	"defaultThinkingLevel",
+] as const;
+
+export type SettingKey = (typeof SETTING_KEYS)[number];
 
 export interface UsageSummary {
 	input: number;

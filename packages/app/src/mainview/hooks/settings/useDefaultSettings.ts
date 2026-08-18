@@ -1,23 +1,20 @@
 import { ref, watch } from "vue"
 import { ElMessage } from "element-plus"
-import type { ThinkingLevel } from "@my-pi/shared"
+import { THINKING_LEVELS, type ThinkingLevel } from "@my-pi/shared"
 import { useSettingsStore } from "../../stores"
 import { useModelOptions, type ModelRef } from "../picks/useModelOptions"
 import { showError } from "../shared/useErrors"
 
-export const THINKING_LEVELS: ThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]
+export { THINKING_LEVELS }
 
 // el-select can't hold undefined as a selectable option value — the "default"
 // choice is a sentinel string mapped to undefined at the API edge.
 export const THINKING_DEFAULT = "__default__"
+
+/** Type guard for the persisted thinking-level value at the save boundary. */
+function isThinkingLevel(v: string): v is ThinkingLevel {
+  return (THINKING_LEVELS as readonly string[]).includes(v)
+}
 
 /**
  * Defaults for new sessions shown in the Settings page: the chat model (used
@@ -31,39 +28,35 @@ export function useDefaultSettings() {
   const modelOptions = useModelOptions()
 
   const chatModel = ref<ModelRef>(
-    (settings.state.settings.chatModel as { provider: string; id: string } | undefined) ??
-      null,
+    settings.state.settings.chatModel ?? null,
   )
   const titleModel = ref<ModelRef>(
-    (settings.state.settings.titleModel as { provider: string; id: string } | undefined) ??
-      null,
+    settings.state.settings.titleModel ?? null,
   )
   const backgroundModel = ref<ModelRef>(
-    (settings.state.settings.defaultModel as { provider: string; id: string } | undefined) ??
-      null,
+    settings.state.settings.defaultModel ?? null,
   )
   const thinking = ref<string>(
-    (settings.state.settings.defaultThinkingLevel as ThinkingLevel | undefined) ??
-      THINKING_DEFAULT,
+    settings.state.settings.defaultThinkingLevel ?? THINKING_DEFAULT,
   )
   const saving = ref(false)
 
   // Keep the local refs in sync with the store so the selects don't show stale
   // values if a model setting changes from elsewhere while the panel is open.
   watch(
-    () => settings.state.settings.chatModel as { provider: string; id: string } | undefined,
+    () => settings.state.settings.chatModel,
     (v) => {
       if (v !== chatModel.value) chatModel.value = v ?? null
     },
   )
   watch(
-    () => settings.state.settings.titleModel as { provider: string; id: string } | undefined,
+    () => settings.state.settings.titleModel,
     (v) => {
       if (v !== titleModel.value) titleModel.value = v ?? null
     },
   )
   watch(
-    () => settings.state.settings.defaultModel as { provider: string; id: string } | undefined,
+    () => settings.state.settings.defaultModel,
     (v) => {
       if (v !== backgroundModel.value) backgroundModel.value = v ?? null
     },
@@ -112,10 +105,11 @@ export function useDefaultSettings() {
       }
     },
     async saveThinking(): Promise<void> {
-      if (thinking.value === THINKING_DEFAULT) return
+      const level = thinking.value
+      if (level === THINKING_DEFAULT || !isThinkingLevel(level)) return
       saving.value = true
       try {
-        await settings.setDefaultThinkingLevel(thinking.value as ThinkingLevel)
+        await settings.setDefaultThinkingLevel(level)
         ElMessage.success("Thinking level saved")
       } catch (err) {
         showError(err)

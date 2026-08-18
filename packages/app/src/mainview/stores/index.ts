@@ -111,7 +111,8 @@ export class Store {
     // A draft's session is created with the chat model. Bail before
     // converting the draft so the composer stays put (message intact) instead
     // of stranding the user on an empty real session with no model to run.
-    if (!this.state.settings.chatModel) {
+    const chatModel = this.state.settings.chatModel
+    if (!chatModel) {
       throw new Error(
         "No model configured. Choose a chat model in Settings before starting a session.",
       )
@@ -119,7 +120,7 @@ export class Store {
     const session = await this.createSession({
       workspaceId: draft.workspaceId,
       autoTitle: true,
-      model: this.state.settings.chatModel as { provider: string; id: string },
+      model: chatModel,
     })
     this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
     await this.openSession(session.id)

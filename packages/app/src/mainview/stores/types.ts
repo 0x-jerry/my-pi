@@ -3,6 +3,18 @@
  * the domain stores and the root facade can import them without cycles.
  */
 
+import type { SettingKey, SettingValue } from "@my-pi/core"
+
+/**
+ * Reactive settings slice. Mirrors the core settings schema map
+ * (SettingKey/SettingValue) so keys and value shapes can't drift; a
+ * stored-but-cleared value (null on the wire) is normalized to an absent
+ * key here.
+ */
+export type SettingsState = {
+  [K in SettingKey]?: Exclude<SettingValue<K>, null>
+}
+
 export interface ActiveToolState {
   toolCallId: string
   toolName: string

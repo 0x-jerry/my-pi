@@ -29,7 +29,7 @@ ws.onmessage = (e) => {
 		console.log("notification:", msg.method, JSON.stringify(msg.params ?? {}).slice(0, 120));
 	}
 };
-function call(id: number, method: string, params: unknown) {
+function call(id: number, method: string, params?: unknown) {
 	return new Promise<any>((res) => {
 		pending.set(id, res);
 		ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
@@ -60,7 +60,11 @@ console.log(
 	"|",
 	(await call(7, "settings.get", { key: "defaultThinkingLevel" })).result,
 );
-const bad = await call(8, "chat.send", { sessionId: "does-not-exist", text: "hi" });
+console.log(
+	"settings.getAll ->",
+	JSON.stringify((await call(9, "settings.getAll")).result),
+);
+const bad = await call(10, "chat.send", { sessionId: "does-not-exist", text: "hi" });
 console.log("chat.send to missing session -> error:", bad.error?.message.slice(0, 60));
 
 ws.close();

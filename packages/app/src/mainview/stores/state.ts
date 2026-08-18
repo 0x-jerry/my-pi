@@ -9,7 +9,7 @@ import type {
   Workspace,
 } from "@my-pi/shared"
 import type { ConnectionState } from "../rpc/client"
-import type { DraftSession, StreamingState } from "./types"
+import type { DraftSession, SettingsState, StreamingState } from "./types"
 
 /**
  * A single shared reactive state object across all domain stores. Keeping one
@@ -32,7 +32,7 @@ export function createState() {
     models: {} as Record<string, ModelInfo[]>,
     pluginsGlobal: [] as PluginInfo[],
     pluginsWorkspace: {} as Record<string, PluginInfo[]>,
-    settings: {} as Record<string, unknown>,
+    settings: {} as SettingsState,
     /** Global error banner (boot failures, send errors, etc.). */
     error: null as string | null,
   })

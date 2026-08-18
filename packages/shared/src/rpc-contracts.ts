@@ -25,6 +25,7 @@ import type {
 	PluginInfo,
 	ProviderInfo,
 	SessionInfo,
+	SettingKey,
 	StoredMessage,
 	TokenUsageRow,
 	UsageSummary,
@@ -94,12 +95,33 @@ export interface RpcMethods extends JsonRpcMethods {
 	 * when absent. NOTE on the wire: JSON cannot carry `undefined`, and the
 	 * server engine normalizes undefined results to `null`, so a missing key
 	 * arrives as `null` — consumers should treat `null` as `undefined`.
+	 *
+	 * `key` must be one of the closed `SETTING_KEYS`; an unknown key, corrupt
+	 * stored JSON, or a stored value that no longer validates is rejected with
+	 * a ServerError (strict single-key read). `fallback` is returned only when
+	 * the row is absent, and is validated against the key's schema too.
 	 */
 	"settings.get": {
-		params: { key: string; fallback?: unknown };
+		params: { key: SettingKey; fallback?: unknown };
 		result: unknown;
 	};
-	"settings.set": { params: { key: string; value: unknown }; result: null };
+	/**
+	 * Snapshot of all stored settings: a flat object of key → stored JSON
+	 * value for every managed key (see `SETTING_KEYS`) that has a row.
+	 * Unknown/corrupt/stale rows are omitted (tolerant bulk read, unlike the
+	 * strict single-key get); a stored-but-cleared value stays `null`.
+	 */
+	"settings.getAll": {
+		params: undefined;
+		result: Record<string, unknown>;
+	};
+	/**
+	 * Writes a setting. `key` must be one of the closed `SETTING_KEYS` and
+	 * `value` must match the key's schema; otherwise the write is rejected
+	 * with a ServerError and nothing is stored. `value: null` clears the
+	 * setting (stored as JSON `null`).
+	 */
+	"settings.set": { params: { key: SettingKey; value: unknown }; result: null };
 }
 
 /** Notification method → params map for every server→client push. */

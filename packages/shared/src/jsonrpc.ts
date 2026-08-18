@@ -45,6 +45,7 @@ export const RpcMethod = {
 	pluginsRemove: "plugins.remove",
 	pluginsSetEnabled: "plugins.setEnabled",
 	settingsGet: "settings.get",
+	settingsGetAll: "settings.getAll",
 	settingsSet: "settings.set",
 } as const;
 
