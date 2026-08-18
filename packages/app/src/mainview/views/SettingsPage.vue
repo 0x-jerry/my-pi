@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AuthPanel from "../components/settings/AuthPanel.vue"
+import ConnectionPanel from "../components/settings/ConnectionPanel.vue"
 import DefaultsPanel from "../components/settings/DefaultsPanel.vue"
 import PluginsPanel from "../components/settings/PluginsPanel.vue"
 </script>
@@ -7,6 +8,7 @@ import PluginsPanel from "../components/settings/PluginsPanel.vue"
 <template>
   <section class="page">
     <h2 class="page-title">Settings</h2>
+    <ConnectionPanel />
     <AuthPanel />
     <DefaultsPanel />
     <PluginsPanel />
@@ -21,7 +23,6 @@ import PluginsPanel from "../components/settings/PluginsPanel.vue"
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 760px;
 }
 .page-title {
   margin: 0;

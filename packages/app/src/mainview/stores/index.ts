@@ -70,6 +70,7 @@ export class Store {
       this.loadProviders(),
       this.loadPluginsGlobal(),
       this.loadSettings(),
+      this.connection.loadPersistedConnection(),
       this.state.activeWorkspaceId
         ? this.loadSessions(this.state.activeWorkspaceId)
         : Promise.resolve(),
@@ -227,6 +228,12 @@ export class Store {
 
   loadSettings(): Promise<void> {
     return this.settings.load()
+  }
+  applyConnection(config: {
+    endpoint: string
+    token: string
+  }): Promise<void> {
+    return this.connection.applyConnection(config)
   }
   setDefaultModel(model: { provider: string; id: string }): Promise<void> {
     return this.settings.setDefaultModel(model)

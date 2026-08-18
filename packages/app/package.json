@@ -15,6 +15,7 @@
 	"dependencies": {
 		"@my-pi/core": "workspace:*",
 		"@my-pi/shared": "workspace:*",
+		"@vueuse/core": "^14.4.0",
 		"electrobun": "1.18.1",
 		"element-plus": "^2.14.4",
 		"vue": "^3.5.41",

@@ -44,8 +44,8 @@ export class RpcError extends Error {
  *   every (re)connect so the store can resync.
  */
 export class RpcClient {
-  readonly url: string
-  readonly token: string
+  url: string
+  token: string
 
   private socket: WebSocket | null = null
   private pending = new Map<
@@ -75,6 +75,29 @@ export class RpcClient {
     this.minBackoffMs = opts.backoffMinMs ?? 500
     this.maxBackoffMs = opts.backoffMaxMs ?? 5000
     this.backoffMs = this.minBackoffMs
+  }
+
+  /**
+   * Reconfigure the endpoint + token and reconnect (used when the user
+   * changes connection settings). Pending requests are rejected and any
+   * in-flight/heartbeat socket is replaced. The client is not permanently
+   * closed, so it keeps auto-reconnecting to the new endpoint.
+   */
+  reconnect(url: string, token: string): void {
+    this.closed = false
+    this.url = url
+    this.token = token
+    this.backoffMs = this.minBackoffMs
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.rejectPending(new Error("Client reconfiguring"))
+    const ws = this.socket
+    this.socket = null
+    ws?.close()
+    this.setConnectionState("closed")
+    this.connect()
   }
 
   /** Open the connection (idempotent; no-op while already connecting/connected). */
