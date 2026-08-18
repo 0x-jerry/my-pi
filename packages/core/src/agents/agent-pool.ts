@@ -1,4 +1,4 @@
-import { PiAgent, type AgentMessage } from "@my-pi/agent";
+import { PiAgent, type PiAgentConfig, type AgentMessage } from "@my-pi/agent";
 import type { PiAgentEvent } from "@my-pi/shared";
 import { EventBus } from "../events/event-bus";
 import { ModelService } from "@my-pi/agent";
@@ -12,12 +12,23 @@ interface PoolEntry {
 	unsubscribe: () => void;
 }
 
+/**
+ * Constructs the PiAgent for a session. Defaults to {@link PiAgent.create}, so
+ * production behavior is unchanged; tests inject fakes to avoid module mocking.
+ */
+export type AgentFactory = (
+	sessionId: string,
+	config: PiAgentConfig,
+) => Promise<PiAgent>;
+
 export interface AgentPoolDeps {
 	bus: EventBus;
 	modelService: ModelService;
 	pluginService: PluginService;
 	sessions: SessionService;
 	workspaces: WorkspaceService;
+	/** Optional factory override; defaults to {@link PiAgent.create}. */
+	agentFactory?: AgentFactory;
 }
 
 /**
@@ -55,7 +66,7 @@ export class AgentPool {
 		const resume = this.deps.sessions.resumePayload(sessionId);
 		const plugins = this.deps.pluginService.resolveForWorkspace(workspace.id);
 
-		const piAgent = await PiAgent.create({
+		const config: PiAgentConfig = {
 			cwd: workspace.path,
 			modelService: this.deps.modelService,
 			model:
@@ -67,7 +78,11 @@ export class AgentPool {
 			enabledPluginPaths: plugins.paths,
 			bundledPlugins: plugins.factories,
 			messages: resume.messages as AgentMessage[],
-		});
+		};
+		const create =
+			this.deps.agentFactory ??
+			((_sessionId: string, cfg: PiAgentConfig) => PiAgent.create(cfg));
+		const piAgent = await create(sessionId, config);
 
 		const unsubscribe = piAgent.on((event) =>
 			this.handleAgentEvent(sessionId, event),
