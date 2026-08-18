@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { RpcClient, RpcError } from "../src/mainview/rpc/client"
+import { RpcClient } from "../src/mainview/rpc/client"
 
 /** Minimal WebSocket stand-in controllable from the test. */
 class FakeWebSocket {
@@ -79,7 +79,7 @@ describe("RpcClient", () => {
     client.connect()
     sockets[0].open()
 
-    const p1 = client.call("workspaces.list", {})
+    const p1 = client.call("workspaces.list")
     const p2 = client.call("sessions.list", { workspaceId: "w1" })
 
     const id1 = JSON.parse(sockets[0].sent[0]) as { id: number }
@@ -93,7 +93,7 @@ describe("RpcClient", () => {
     client.close()
   })
 
-  test("rejects with RpcError on JSON-RPC error objects", async () => {
+  test("rejects with an Error carrying the JSON-RPC error code", async () => {
     const { client, sockets } = setup()
     client.connect()
     sockets[0].open()
@@ -106,14 +106,14 @@ describe("RpcClient", () => {
       error: { code: -32602, message: "Invalid params" },
     })
 
-    await expect(p).rejects.toBeInstanceOf(RpcError)
+    await expect(p).rejects.toBeInstanceOf(Error)
     await expect(p).rejects.toMatchObject({ code: -32602 })
     client.close()
   })
 
   test("rejects immediately when not connected", async () => {
     const { client } = setup()
-    await expect(client.call("workspaces.list", {})).rejects.toThrow(
+    await expect(client.call("workspaces.list")).rejects.toThrow(
       "Not connected",
     )
   })
@@ -205,7 +205,7 @@ describe("RpcClient", () => {
 
     await vi.advanceTimersByTimeAsync(10_000)
     expect(sockets).toHaveLength(1) // no new sockets
-    await expect(client.call("workspaces.list", {})).rejects.toThrow(
+    await expect(client.call("workspaces.list")).rejects.toThrow(
       "Not connected",
     )
   })
@@ -236,7 +236,7 @@ describe("RpcClient", () => {
       params: { sessionId: "s1", status: "running" },
     })
     expect(statuses).toHaveLength(0)
-    await expect(client.call("workspaces.list", {})).rejects.toThrow(
+    await expect(client.call("workspaces.list")).rejects.toThrow(
       "Not connected",
     )
   })
@@ -247,6 +247,70 @@ describe("RpcClient", () => {
     sockets[0].open()
     expect(() => sockets[0].receive("not json")).not.toThrow()
     expect(() => sockets[0].receive({ jsonrpc: "2.0", id: 999, result: 1 })).not.toThrow()
+    client.close()
+  })
+
+  test("reconnect() reconfigures endpoint, rejects pending, keeps listeners", async () => {
+    const { client, sockets } = setup()
+    client.connect()
+    sockets[0].open()
+
+    const p = client.call("chat.send", { sessionId: "s1", text: "hi" })
+    const statuses: unknown[] = []
+    client.on("session.status", (s) => statuses.push(s))
+
+    // Reconfigure without waiting: reconnect() closes the old socket and
+    // immediately attempts a new connection.
+    client.reconnect("ws://127.0.0.1:7777/ws", "new-secret")
+    await expect(p).rejects.toThrow("reconfiguring")
+
+    expect(sockets).toHaveLength(2)
+    expect(sockets[1].url).toBe("ws://127.0.0.1:7777/ws")
+    expect(sockets[1].protocols).toBe("new-secret")
+
+    // Listeners survive the engine swap and fire on the new socket.
+    sockets[1].open()
+    sockets[1].receive({
+      jsonrpc: "2.0",
+      method: "session.status",
+      params: { sessionId: "s1", status: "running" },
+    })
+    expect(statuses).toEqual([{ sessionId: "s1", status: "running" }])
+    client.close()
+  })
+
+  test("notification handlers survive a reconnect", async () => {
+    const sockets: FakeWebSocket[] = []
+    const client = new RpcClient({
+      url: "ws://127.0.0.1:9999/ws",
+      token: "secret",
+      backoffMinMs: 1,
+      backoffMaxMs: 1,
+      socketFactory: (url, token) => {
+        const ws = new FakeWebSocket(url, token)
+        sockets.push(ws)
+        return ws as unknown as WebSocket
+      },
+    })
+    client.connect()
+    sockets[0].open()
+
+    const statuses: unknown[] = []
+    client.on("session.status", (p) => statuses.push(p))
+
+    // Force a reconnect: the 1ms backoff re-establishes the connection.
+    sockets[0].drop()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(sockets).toHaveLength(2)
+    sockets[1].open()
+
+    // The handler was re-registered on the fresh engine after the drop.
+    sockets[1].receive({
+      jsonrpc: "2.0",
+      method: "session.status",
+      params: { sessionId: "s1", status: "running" },
+    })
+    expect(statuses).toEqual([{ sessionId: "s1", status: "running" }])
     client.close()
   })
 })

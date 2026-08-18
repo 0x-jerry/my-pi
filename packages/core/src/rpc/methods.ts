@@ -4,8 +4,12 @@ import type { CoreApp } from "../app";
 
 /**
  * Extract request params as an object. Methods that require params throw
- * RpcParamsError (mapped to -32602 INVALID_PARAMS) when params are missing or
- * not an object; optional-param methods pass `required: false` to get `{}`.
+ * RpcParamsError when params are missing or not an object; optional-param
+ * methods pass `required: false` to get `{}`.
+ *
+ * NOTE: with the @0x-jerry/utils engine a thrown RpcParamsError surfaces as
+ * ServerError (-32000), not INVALID_PARAMS (-32602) — the engine only
+ * preserves codes in the -32099..-32000 range (see server.ts).
  */
 function params(raw: unknown, required = true): any {
 	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {

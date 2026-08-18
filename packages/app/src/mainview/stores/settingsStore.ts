@@ -25,18 +25,22 @@ export class SettingsStore {
     if (chatModel) this.state.settings.chatModel = chatModel
     const titleModel = await this.getModelSetting("titleModel")
     if (titleModel) this.state.settings.titleModel = titleModel
-    const thinking = await this.client.call<ThinkingLevel | undefined>(
-      RpcMethod.settingsGet,
-      { key: "defaultThinkingLevel" },
-    )
+    const thinking =
+      ((await this.client.call(RpcMethod.settingsGet, {
+        key: "defaultThinkingLevel",
+      })) as ThinkingLevel | null) ?? undefined
     if (thinking) this.state.settings.defaultThinkingLevel = thinking
   }
 
-  private async getModelSetting(key: string) {
-    return this.client.call<{ provider: string; id: string } | undefined>(
-      RpcMethod.settingsGet,
-      { key },
-    )
+  private async getModelSetting(
+    key: string,
+  ): Promise<{ provider: string; id: string } | undefined> {
+    // The wire carries `null` for a stored-but-undefined value; normalize it
+    // back to `undefined` so callers can distinguish absent from null.
+    const value = (await this.client.call(RpcMethod.settingsGet, {
+      key,
+    })) as { provider: string; id: string } | null
+    return value ?? undefined
   }
 
   private async setModelSetting(

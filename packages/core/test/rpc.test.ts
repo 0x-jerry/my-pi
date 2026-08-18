@@ -64,7 +64,8 @@ describe("JsonRpcServer", () => {
 
 		request(ws, 2, "boom");
 		const err = (await nextMessage(ws)) as { error: { code: number; message: string } };
-		expect(err.error.code).toBe(-32603);
+		// @0x-jerry/utils replies ServerError (-32000) for thrown handler errors.
+		expect(err.error.code).toBe(-32000);
 		expect(err.error.message).toBe("kaboom");
 
 		ws.close();
@@ -88,24 +89,52 @@ describe("JsonRpcServer", () => {
 		ws.close();
 	});
 
-	test("maps RpcParamsError to -32602 INVALID_PARAMS", async () => {
+	test("maps RpcParamsError to ServerError (-32000) with message intact", async () => {
 		const port = await startServer();
 		const ws = await connect(port);
 		request(ws, 4, "needs"); // params omitted
-		const err = (await nextMessage(ws)) as { error: { code: number } };
-		expect(err.error.code).toBe(-32602);
+		const err = (await nextMessage(ws)) as { error: { code: number; message: string } };
+		// The @0x-jerry/utils engine only preserves codes in -32099..-32000, so
+		// param-validation failures surface as a generic ServerError here.
+		expect(err.error.code).toBe(-32000);
+		expect(err.error.message).toBe("Invalid params");
 		request(ws, 5, "needs", { a: 1 }); // object params are fine
 		const ok = (await nextMessage(ws)) as { result: unknown };
 		expect(ok.result).toEqual({ got: { a: 1 } });
 		ws.close();
 	});
 
-	test("answers requests with null id", async () => {
+	test("rejects requests with a null id (engine returns -32600)", async () => {
 		const port = await startServer();
 		const ws = await connect(port);
 		ws.send(JSON.stringify({ jsonrpc: "2.0", id: null, method: "ping" }));
-		const reply = (await nextMessage(ws)) as { id: null };
+		const reply = (await nextMessage(ws)) as {
+			id: null;
+			error?: { code: number };
+		};
+		// The @0x-jerry/utils engine rejects the discouraged null id (see the
+		// behavior note in server.ts); the first-party client never sends one,
+		// but the reply shape must be asserted so a regression here is caught.
 		expect(reply.id).toBe(null);
+		expect(reply.error?.code).toBe(-32600);
+		ws.close();
+	});
+
+	test("void handlers reply with result: null on the wire", async () => {
+		const port = await startServer();
+		const ws = await connect(port);
+		server!.register("noop", () => {});
+		request(ws, 6, "noop");
+		const reply = (await nextMessage(ws)) as {
+			id: number;
+			result: unknown;
+			error?: unknown;
+		};
+		// JSON cannot carry `undefined`; the server normalizes void results to
+		// null so the client can correlate the response (no hang).
+		expect(reply.id).toBe(6);
+		expect(reply.result).toBe(null);
+		expect(reply.error).toBeUndefined();
 		ws.close();
 	});
 

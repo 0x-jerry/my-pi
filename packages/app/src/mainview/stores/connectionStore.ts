@@ -1,4 +1,5 @@
 import { RpcClient, type ConnectionState } from "../rpc/client"
+import type { RpcNotifications } from "@my-pi/shared"
 import type { AppState } from "./state"
 import { errMessage } from "./types"
 import { useLocalStorage } from "@vueuse/core"
@@ -37,7 +38,10 @@ export class ConnectionStore {
   }
 
   /** Register a notification handler with unhandled-rejection protection. */
-  on(method: string, handler: (p: unknown) => void | Promise<void>): void {
+  on<M extends keyof RpcNotifications & string>(
+    method: M,
+    handler: (p: RpcNotifications[M]) => void | Promise<void>,
+  ): void {
     this.client.on(method, (p) => {
       try {
         const result = handler(p)

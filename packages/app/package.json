@@ -13,6 +13,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@0x-jerry/utils": "^6.6.0",
 		"@my-pi/core": "workspace:*",
 		"@my-pi/shared": "workspace:*",
 		"@vueuse/core": "^14.4.0",

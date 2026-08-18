@@ -1,4 +1,8 @@
-import { RpcEvent, RpcMethod, type StoredMessage, type UsageSummary } from "@my-pi/shared"
+import {
+  RpcEvent,
+  RpcMethod,
+  type RpcNotifications,
+} from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
 import type { AppState } from "./state"
 import type { RpcClient } from "../rpc/client"
@@ -45,7 +49,7 @@ export class ChatStore {
     const st = this.ensureStreaming(sessionId)
     st.pendingSend = text
     try {
-      await this.client.call<void>(RpcMethod.chatSend, { sessionId, text })
+      await this.client.call(RpcMethod.chatSend, { sessionId, text })
     } catch (err) {
       st.pendingSend = null
       st.status = "error"
@@ -54,30 +58,26 @@ export class ChatStore {
     }
   }
 
-  steer(sessionId: string, text: string): Promise<void> {
-    return this.client.call<void>(RpcMethod.chatSteer, { sessionId, text })
+  async steer(sessionId: string, text: string): Promise<void> {
+    await this.client.call(RpcMethod.chatSteer, { sessionId, text })
   }
 
   streamingFor(sessionId: string) {
     return this.ensureStreaming(sessionId)
   }
 
-  followUp(sessionId: string, text: string): Promise<void> {
-    return this.client.call<void>(RpcMethod.chatFollowUp, { sessionId, text })
+  async followUp(sessionId: string, text: string): Promise<void> {
+    await this.client.call(RpcMethod.chatFollowUp, { sessionId, text })
   }
 
-  abort(sessionId: string): Promise<void> {
-    return this.client.call<void>(RpcMethod.chatAbort, { sessionId })
+  async abort(sessionId: string): Promise<void> {
+    await this.client.call(RpcMethod.chatAbort, { sessionId })
   }
 
   // ---- notification handlers ----
 
-  private handleStatus(p: unknown): void {
-    const { sessionId, status, error } = p as {
-      sessionId: string
-      status: "idle" | "running" | "stopped" | "error"
-      error?: string
-    }
+  private handleStatus(p: RpcNotifications["session.status"]): void {
+    const { sessionId, status, error } = p
     const st = this.ensureStreaming(sessionId)
     st.status = status
     st.error = error
@@ -99,24 +99,15 @@ export class ChatStore {
     }
   }
 
-  private handleDelta(p: unknown): void {
-    const { sessionId, kind, delta } = p as {
-      sessionId: string
-      kind: "text" | "thinking"
-      delta: string
-    }
+  private handleDelta(p: RpcNotifications["session.delta"]): void {
+    const { sessionId, kind, delta } = p
     const st = this.ensureStreaming(sessionId)
     if (kind === "text") st.textBuf += delta
     else st.thinkingBuf += delta
   }
 
-  private handleToolStart(p: unknown): void {
-    const { sessionId, toolCallId, toolName, args } = p as {
-      sessionId: string
-      toolCallId: string
-      toolName: string
-      args: unknown
-    }
+  private handleToolStart(p: RpcNotifications["session.tool_start"]): void {
+    const { sessionId, toolCallId, toolName, args } = p
     const st = this.ensureStreaming(sessionId)
     // A tool boundary ends the current assistant message: freeze its streamed
     // content so multi-assistant turns render as separate segments instead of
@@ -129,25 +120,16 @@ export class ChatStore {
     st.activeTool = { toolCallId, toolName, args }
   }
 
-  private handleToolUpdate(p: unknown): void {
-    const { sessionId, toolCallId, partialResult } = p as {
-      sessionId: string
-      toolCallId: string
-      partialResult: unknown
-    }
+  private handleToolUpdate(p: RpcNotifications["session.tool_update"]): void {
+    const { sessionId, toolCallId, partialResult } = p
     const st = this.state.streaming[sessionId]
     if (st?.activeTool && st.activeTool.toolCallId === toolCallId) {
       st.activeTool.partialResult = partialResult
     }
   }
 
-  private handleToolEnd(p: unknown): void {
-    const { sessionId, toolCallId, result, isError } = p as {
-      sessionId: string
-      toolCallId: string
-      result: unknown
-      isError: boolean
-    }
+  private handleToolEnd(p: RpcNotifications["session.tool_end"]): void {
+    const { sessionId, toolCallId, result, isError } = p
     const st = this.state.streaming[sessionId]
     if (st?.activeTool && st.activeTool.toolCallId === toolCallId) {
       st.activeTool.result = result
@@ -155,11 +137,8 @@ export class ChatStore {
     }
   }
 
-  private handleMessageEnd(p: unknown): void {
-    const { sessionId, message } = p as {
-      sessionId: string
-      message: StoredMessage
-    }
+  private handleMessageEnd(p: RpcNotifications["session.message_end"]): void {
+    const { sessionId, message } = p
     const current = this.state.messagesBySession[sessionId]
     const list = current ?? []
     const idx = list.findIndex((m) => m.id === message.id)
@@ -174,13 +153,8 @@ export class ChatStore {
     }
   }
 
-  private handleRunEnd(p: unknown): void {
-    const { sessionId, messages, usage, error } = p as {
-      sessionId: string
-      messages: StoredMessage[]
-      usage: UsageSummary
-      error?: string
-    }
+  private handleRunEnd(p: RpcNotifications["session.run_end"]): void {
+    const { sessionId, messages, usage, error } = p
     // Reconcile by stable id: makes message_end + run_end idempotent and
     // supersedes any optimistic/pending UI state.
     const current = this.state.messagesBySession[sessionId] ?? []
@@ -204,12 +178,10 @@ export class ChatStore {
   }
 
   /** LLM auto-title landed: patch the row in place (no refetch needed). */
-  private handleTitleUpdated(p: unknown): void {
-    const { sessionId, title, updatedAt } = p as {
-      sessionId: string
-      title: string
-      updatedAt?: number
-    }
+  private handleTitleUpdated(
+    p: RpcNotifications["session.title_updated"],
+  ): void {
+    const { sessionId, title, updatedAt } = p
     const row = this.state.sessions.find((s) => s.id === sessionId)
     if (row) {
       row.title = title

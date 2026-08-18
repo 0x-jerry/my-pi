@@ -1,4 +1,4 @@
-import { RpcEvent, RpcMethod, type Workspace } from "@my-pi/shared"
+import { RpcEvent, RpcMethod, type RpcNotifications, type Workspace } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
 import type { AppState } from "./state"
 import type { RpcClient } from "../rpc/client"
@@ -20,19 +20,16 @@ export class WorkspaceStore {
   }
 
   async load(): Promise<void> {
-    this.state.workspaces = await this.client.call<Workspace[]>(
-      RpcMethod.workspacesList,
-      {},
-    )
+    this.state.workspaces = await this.client.call(RpcMethod.workspacesList)
   }
 
   /** Open the shell's native folder picker; resolves to a path or null. */
   async pickFolder(): Promise<string | null> {
-    return this.client.call<string | null>(RpcMethod.dialogsPickFolder)
+    return this.client.call(RpcMethod.dialogsPickFolder)
   }
 
   async createWorkspace(name: string, path: string): Promise<Workspace> {
-    const ws = await this.client.call<Workspace>(RpcMethod.workspacesCreate, {
+    const ws = await this.client.call(RpcMethod.workspacesCreate, {
       name,
       path,
     })
@@ -41,7 +38,7 @@ export class WorkspaceStore {
   }
 
   async removeWorkspaceRpc(id: string): Promise<void> {
-    await this.client.call<void>(RpcMethod.workspacesRemove, { id })
+    await this.client.call(RpcMethod.workspacesRemove, { id })
   }
 
   async loadWorkspacesRpc(): Promise<void> {
@@ -86,8 +83,10 @@ export class WorkspaceStore {
     this.state.drafts = []
   }
 
-  private async handleWorkspaceUpdated(p: unknown): Promise<void> {
-    const { workspaceId } = p as { workspaceId: string }
+  private async handleWorkspaceUpdated(
+    p: RpcNotifications["workspace.updated"],
+  ): Promise<void> {
+    const { workspaceId } = p
     // Await the reload before tearing down the active selection so the tree
     // shows the refreshed list and a failed reload leaves active state intact
     // (matches the original await-first behaviour).

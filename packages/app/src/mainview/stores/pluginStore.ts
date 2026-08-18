@@ -1,4 +1,4 @@
-import { RpcMethod, type PluginInfo } from "@my-pi/shared"
+import { RpcMethod } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
 import type { AppState } from "./state"
 import type { RpcClient } from "../rpc/client"
@@ -18,14 +18,11 @@ export class PluginStore {
   }
 
   async loadGlobal(): Promise<void> {
-    this.state.pluginsGlobal = await this.client.call<PluginInfo[]>(
-      RpcMethod.pluginsList,
-      {},
-    )
+    this.state.pluginsGlobal = await this.client.call(RpcMethod.pluginsList)
   }
 
   async loadForWorkspace(workspaceId: string): Promise<void> {
-    this.state.pluginsWorkspace[workspaceId] = await this.client.call<PluginInfo[]>(
+    this.state.pluginsWorkspace[workspaceId] = await this.client.call(
       RpcMethod.pluginsList,
       { workspaceId },
     )

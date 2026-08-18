@@ -1,4 +1,4 @@
-import { RpcMethod, type ModelInfo, type ProviderInfo } from "@my-pi/shared"
+import { RpcMethod, type ModelInfo } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
 import type { AppState } from "./state"
 import type { RpcClient } from "../rpc/client"
@@ -18,28 +18,24 @@ export class ModelStore {
   }
 
   async loadProviders(): Promise<void> {
-    this.state.providers = await this.client.call<ProviderInfo[]>(
-      RpcMethod.modelsProviders,
-      {},
-    )
+    this.state.providers = await this.client.call(RpcMethod.modelsProviders)
   }
 
   async listModels(providerId: string): Promise<ModelInfo[]> {
-    const models = await this.client.call<ModelInfo[]>(
-      RpcMethod.modelsAvailable,
-      { providerId },
-    )
+    const models = await this.client.call(RpcMethod.modelsAvailable, {
+      providerId,
+    })
     this.state.models[providerId] = models
     return models
   }
 
   async loginApiKey(providerId: string, apiKey: string): Promise<void> {
-    await this.client.call<void>(RpcMethod.modelsLogin, { providerId, apiKey })
+    await this.client.call(RpcMethod.modelsLogin, { providerId, apiKey })
     await this.loadProviders()
   }
 
   async logout(providerId: string): Promise<void> {
-    await this.client.call<void>(RpcMethod.modelsLogout, { providerId })
+    await this.client.call(RpcMethod.modelsLogout, { providerId })
     await this.loadProviders()
   }
 }

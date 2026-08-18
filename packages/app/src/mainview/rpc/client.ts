@@ -1,4 +1,5 @@
-import type { JsonRpcError } from "@my-pi/shared"
+import { JsonRpcClient } from "@0x-jerry/utils"
+import type { RpcMethods, RpcNotifications } from "@my-pi/shared"
 
 export type ConnectionState = "closed" | "connecting" | "connected" | "reconnecting"
 
@@ -17,29 +18,20 @@ export interface RpcClientOptions {
   backoffMaxMs?: number
 }
 
-type Listener = (params: unknown) => void
-
-/** Error carrying a JSON-RPC error object (code/message/data). */
-export class RpcError extends Error {
-  readonly code: number
-  readonly data: unknown
-  constructor(error: unknown) {
-    const e = (
-      typeof error === "object" && error !== null ? error : {}
-    ) as Partial<JsonRpcError>
-    super(typeof e.message === "string" ? e.message : "RPC error")
-    this.name = "RpcError"
-    this.code = typeof e.code === "number" ? e.code : -32603
-    this.data = e.data
-  }
-}
+type FanoutListener = (params: unknown) => void
 
 /**
- * Minimal JSON-RPC 2.0 client over WebSocket.
+ * JSON-RPC 2.0 client over WebSocket.
  *
- * - `call()` correlates responses by incrementing id; rejects on JSON-RPC
- *   error objects and on transport failure (in-flight calls fail fast).
- * - Notifications (messages without an id) dispatch to `on(method, cb)`.
+ * The transport (connect/reconnect with capped exponential backoff,
+ * connection state, `onRefreshAll`) lives here; the JSON-RPC protocol
+ * layer (request correlation, notification dispatch) is delegated to
+ * `JsonRpcClient` from `@0x-jerry/utils`, typed by the shared
+ * `RpcMethods`/`RpcNotifications` contracts.
+ *
+ * - `call()` rejects on JSON-RPC error objects and on transport failure
+ *   (in-flight calls fail fast).
+ * - Notifications dispatch to `on(method, cb)`.
  * - Auto-reconnects with capped exponential backoff; `onRefreshAll` fires on
  *   every (re)connect so the store can resync.
  */
@@ -48,12 +40,9 @@ export class RpcClient {
   token: string
 
   private socket: WebSocket | null = null
-  private pending = new Map<
-    number,
-    { resolve: (value: unknown) => void; reject: (err: Error) => void }
-  >()
-  private nextId = 1
-  private listeners = new Map<string, Set<Listener>>()
+  private jsonrpc: JsonRpcClient
+  /** Our own notification registry so subscriptions survive engine swaps. */
+  private listeners = new Map<string, Set<FanoutListener>>()
   private minBackoffMs: number
   private maxBackoffMs: number
   private backoffMs: number
@@ -75,6 +64,37 @@ export class RpcClient {
     this.minBackoffMs = opts.backoffMinMs ?? 500
     this.maxBackoffMs = opts.backoffMaxMs ?? 5000
     this.backoffMs = this.minBackoffMs
+    this.jsonrpc = this.makeJsonrpc()
+  }
+
+  /** Build a protocol engine bound to the current socket. */
+  private makeJsonrpc(): JsonRpcClient {
+    const jsonrpc = new JsonRpcClient((message) => {
+      const ws = this.socket
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(message))
+      }
+    })
+    // Fan-out handlers read from `this.listeners`, so they survive engine
+    // swaps (reconnect / reconfigure replace the engine instance).
+    for (const method of this.listeners.keys()) {
+      this.registerFanout(jsonrpc, method)
+    }
+    return jsonrpc
+  }
+
+  private registerFanout(jsonrpc: JsonRpcClient, method: string): void {
+    jsonrpc.onNotification(method, (params) => {
+      const set = this.listeners.get(method)
+      if (!set) return
+      for (const listener of [...set]) listener(params)
+    })
+  }
+
+  /** Dispose the current engine's in-flight calls and swap in a fresh one. */
+  private swapEngine(err: Error): void {
+    this.jsonrpc.dispose(err)
+    this.jsonrpc = this.makeJsonrpc()
   }
 
   /**
@@ -92,7 +112,7 @@ export class RpcClient {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    this.rejectPending(new Error("Client reconfiguring"))
+    this.swapEngine(new Error("Client reconfiguring"))
     const ws = this.socket
     this.socket = null
     ws?.close()
@@ -127,38 +147,42 @@ export class RpcClient {
       // Ignore stale sockets (closed deliberately or replaced by a reconnect).
       if (this.closed || this.socket !== ws) return
       this.socket = null
-      this.rejectPending(new Error("WebSocket connection closed"))
+      this.swapEngine(new Error("WebSocket connection closed"))
       this.setConnectionState("reconnecting")
       this.scheduleReconnect()
     }
   }
 
   /** Send a request and await its response. Rejects if disconnected. */
-  call<T = unknown>(method: string, params?: unknown): Promise<T> {
+  call<M extends keyof RpcMethods & string>(
+    method: M,
+    params?: RpcMethods[M]["params"],
+  ): Promise<RpcMethods[M]["result"]> {
     const ws = this.socket
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("Not connected to server"))
     }
-    const id = this.nextId++
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, {
-        resolve: (v) => resolve(v as T),
-        reject,
-      })
-      ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }))
-    })
+    return this.jsonrpc.call(method, params) as Promise<
+      RpcMethods[M]["result"]
+    >
   }
 
-  /** Subscribe to server→client notifications. Returns an unsubscribe fn. */
-  on(method: string, listener: Listener): () => void {
-    let set = this.listeners.get(method)
-    if (!set) {
-      set = new Set()
+  /**
+   * Subscribe to server→client notifications. Returns an unsubscribe fn.
+   * The listener's params are typed by the `RpcNotifications` contract.
+   */
+  on<M extends keyof RpcNotifications & string>(
+    method: M,
+    listener: (params: RpcNotifications[M]) => void,
+  ): () => void {
+    if (!this.listeners.has(method)) {
+      const set = new Set<FanoutListener>()
       this.listeners.set(method, set)
+      this.registerFanout(this.jsonrpc, method)
     }
-    set.add(listener)
+    this.listeners.get(method)!.add(listener as FanoutListener)
     return () => {
-      set.delete(listener)
+      this.listeners.get(method)?.delete(listener as FanoutListener)
     }
   }
 
@@ -169,7 +193,7 @@ export class RpcClient {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    this.rejectPending(new Error("Client closed"))
+    this.jsonrpc.dispose(new Error("Client closed"))
     const ws = this.socket
     this.socket = null
     ws?.close()
@@ -192,34 +216,7 @@ export class RpcClient {
     } catch {
       return
     }
-    const obj = msg as {
-      id?: unknown
-      method?: unknown
-      params?: unknown
-      result?: unknown
-      error?: unknown
-    }
-    // Response (has an id we issued)
-    if (typeof obj.id === "number") {
-      const entry = this.pending.get(obj.id)
-      if (!entry) return
-      this.pending.delete(obj.id)
-      if (obj.error) entry.reject(new RpcError(obj.error as JsonRpcError))
-      else entry.resolve(obj.result)
-      return
-    }
-    // Notification (no id)
-    if (typeof obj.method === "string") {
-      const set = this.listeners.get(obj.method)
-      if (set) {
-        for (const listener of [...set]) listener(obj.params)
-      }
-    }
-  }
-
-  private rejectPending(err: Error): void {
-    for (const { reject } of this.pending.values()) reject(err)
-    this.pending.clear()
+    this.jsonrpc.handleMessage(msg)
   }
 
   private setConnectionState(state: ConnectionState): void {

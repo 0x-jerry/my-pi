@@ -1,4 +1,4 @@
-import { RpcMethod, type CreateSessionInput, type SessionInfo, type StoredMessage } from "@my-pi/shared"
+import { RpcMethod, type CreateSessionInput, type SessionInfo } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
 import type { AppState } from "./state"
 import type { RpcClient } from "../rpc/client"
@@ -19,7 +19,7 @@ export class SessionStore {
   }
 
   async load(workspaceId: string): Promise<void> {
-    this.state.sessions = await this.client.call<SessionInfo[]>(
+    this.state.sessions = await this.client.call(
       RpcMethod.sessionsList,
       { workspaceId },
     )
@@ -28,13 +28,13 @@ export class SessionStore {
   /** Fetch (or re-fetch) the transcript for one session into the store. */
   async loadMessages(sessionId: string): Promise<void> {
     this.state.messagesBySession[sessionId] =
-      await this.client.call<StoredMessage[]>(RpcMethod.sessionsMessages, {
+      await this.client.call(RpcMethod.sessionsMessages, {
         id: sessionId,
       })
   }
 
   async createSession(input: CreateSessionInput): Promise<SessionInfo> {
-    const session = await this.client.call<SessionInfo>(
+    const session = await this.client.call(
       RpcMethod.sessionsCreate,
       input,
     )
@@ -44,7 +44,7 @@ export class SessionStore {
 
   async deleteSession(id: string): Promise<void> {
     const wsId = this.state.activeWorkspaceId
-    await this.client.call<void>(RpcMethod.sessionsDelete, { id })
+    await this.client.call(RpcMethod.sessionsDelete, { id })
     if (this.state.activeSessionId === id) this.state.activeSessionId = null
     // Evict per-session state so deleted sessions don't accumulate.
     delete this.state.streaming[id]
@@ -54,7 +54,7 @@ export class SessionStore {
   }
 
   async forkSession(id: string, uptoSeq?: number): Promise<SessionInfo> {
-    const forked = await this.client.call<SessionInfo>(RpcMethod.sessionsFork, {
+    const forked = await this.client.call(RpcMethod.sessionsFork, {
       id,
       uptoSeq,
     })
@@ -68,7 +68,7 @@ export class SessionStore {
     id: string,
     model: { provider: string; id: string },
   ): Promise<SessionInfo> {
-    const updated = await this.client.call<SessionInfo>(
+    const updated = await this.client.call(
       RpcMethod.sessionsUpdateModel,
       { id, model },
     )
