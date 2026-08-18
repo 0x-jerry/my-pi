@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { DEFAULT_SESSION_TITLE } from "@my-pi/shared"
-import IconTelegram from "~icons/hugeicons/telegram"
 import { useDraftChat } from "../hooks/chat/useDraftChat"
 
 const props = defineProps<{ draftId: string | null }>()
@@ -25,24 +24,18 @@ const { input, sending, send } = useDraftChat(() => props.draftId)
     </div>
 
     <footer class="draft-foot">
-      <div class="input-row">
-        <el-input
-          v-model="input"
-          type="textarea"
-          :autosize="{ minRows: 2, maxRows: 6 }"
-          resize="none"
-          placeholder="Message… (Enter to send, Shift+Enter for newline)"
-          @keydown.enter.exact.prevent="send"
-        />
-        <el-button
-          type="primary"
-          :disabled="!input.trim() || sending"
-          :loading="sending"
-          :icon="IconTelegram"
-          @click="send"
-        >
-          {{ sending ? "Starting…" : "Start chat" }}
-        </el-button>
+      <el-input
+        v-model="input"
+        type="textarea"
+        :autosize="{ minRows: 2, maxRows: 6 }"
+        resize="none"
+        :disabled="sending"
+        placeholder="Message… (Enter to send, Shift+Enter for newline)"
+        @keydown.enter.exact.prevent="send"
+      />
+      <div class="draft-hint">
+        <template v-if="sending">Starting…</template>
+        <template v-else>This session will be created with your first message.</template>
       </div>
     </footer>
   </section>
@@ -79,14 +72,13 @@ const { input, sending, send } = useDraftChat(() => props.draftId)
 .draft-foot {
   border-top: 1px solid var(--border);
   padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   background: var(--bg-panel);
 }
-.input-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-.input-row .el-input {
-  flex: 1;
+.draft-hint {
+  color: var(--fg-dim);
+  font-size: 11px;
 }
 </style>

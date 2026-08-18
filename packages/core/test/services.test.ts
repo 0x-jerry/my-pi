@@ -117,6 +117,36 @@ describe("SessionService", () => {
 		expect(sessions.get(session.id).modelId).toBe("claude-4");
 	});
 
+	test("updateThinkingLevel overrides the thinking level for one session", () => {
+		const ws = workspaces.create({ name: "a", path: dir });
+		const session = sessions.create({
+			workspaceId: ws.id,
+			thinkingLevel: "low",
+		});
+		const updated = sessions.updateThinkingLevel(session.id, "high");
+		expect(updated.thinkingLevel).toBe("high");
+		expect(sessions.get(session.id).thinkingLevel).toBe("high");
+	});
+
+	test("updateThinkingLevel with null clears the per-session override", () => {
+		const ws = workspaces.create({ name: "a", path: dir });
+		const session = sessions.create({
+			workspaceId: ws.id,
+			thinkingLevel: "low",
+		});
+		const updated = sessions.updateThinkingLevel(session.id, null);
+		// NULL columns read back as null from bun:sqlite (unset on the wire).
+		expect(updated.thinkingLevel ?? null).toBeNull();
+	});
+
+	test("updateThinkingLevel rejects an invalid level", () => {
+		const ws = workspaces.create({ name: "a", path: dir });
+		const session = sessions.create({ workspaceId: ws.id });
+		expect(() =>
+			sessions.updateThinkingLevel(session.id, "bogus" as never),
+		).toThrow("Invalid thinking level");
+	});
+
 	test("resumePayload returns stored transcript", () => {
 		const ws = workspaces.create({ name: "a", path: dir });
 		const session = sessions.create({ workspaceId: ws.id });

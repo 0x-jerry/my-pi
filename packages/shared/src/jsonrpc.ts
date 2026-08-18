@@ -30,6 +30,7 @@ export const RpcMethod = {
 	sessionsMessages: "sessions.messages",
 	sessionsUsage: "sessions.usage",
 	sessionsUpdateModel: "sessions.updateModel",
+	sessionsUpdateThinkingLevel: "sessions.updateThinkingLevel",
 	chatSend: "chat.send",
 	chatSteer: "chat.steer",
 	chatFollowUp: "chat.followUp",

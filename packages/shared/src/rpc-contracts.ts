@@ -27,6 +27,7 @@ import type {
 	SessionInfo,
 	SettingKey,
 	StoredMessage,
+	ThinkingLevel,
 	TokenUsageRow,
 	UsageSummary,
 	Workspace,
@@ -52,6 +53,10 @@ export interface RpcMethods extends JsonRpcMethods {
 	"sessions.usage": { params: { id: string }; result: TokenUsageRow[] };
 	"sessions.updateModel": {
 		params: { id: string; model: { provider: string; id: string } };
+		result: SessionInfo;
+	};
+	"sessions.updateThinkingLevel": {
+		params: { id: string; thinkingLevel: ThinkingLevel | null };
 		result: SessionInfo;
 	};
 	// Chat

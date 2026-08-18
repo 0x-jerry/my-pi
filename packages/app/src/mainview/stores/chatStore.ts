@@ -21,7 +21,7 @@ export type ChatStateSlice = ReturnType<typeof createChatState>
 
 /**
  * Chat domain: per-session streaming state and usage, the send / steer /
- * follow-up / abort actions, and the live notification handlers
+ * abort actions, and the live notification handlers
  * (status/delta/tool/message/run/title). Transcript writes go through the
  * session store's `upsertMessage`/`reconcileMessages` primitives and session
  * rows come from `sessionById` / `scheduleForSession`, so each slice keeps a
@@ -87,10 +87,6 @@ export class ChatStore {
 
   async steer(sessionId: string, text: string): Promise<void> {
     await this.client.call(RpcMethod.chatSteer, { sessionId, text })
-  }
-
-  async followUp(sessionId: string, text: string): Promise<void> {
-    await this.client.call(RpcMethod.chatFollowUp, { sessionId, text })
   }
 
   async abort(sessionId: string): Promise<void> {

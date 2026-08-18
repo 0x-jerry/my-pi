@@ -4,9 +4,14 @@ import { useChatStore, useSessionStore } from "../../stores"
 
 /**
  * Behavior for the chat composer + transcript: derives session/message/stream
- * state from the store and exposes the send / steer / follow-up / abort / fork
- * actions. Keeps its own local `input`, `busy` and transient `actionError`
- * refs so the presenting component stays purely declarative.
+ * state from the store and exposes the submit / abort / fork actions. Keeps
+ * its own local `input`, `busy` and transient `actionError` refs so the
+ * presenting component stays purely declarative.
+ *
+ * Submit semantics (Enter in the composer): when a run is processing the new
+ * message is sent as a steer (interrupting the running agent); otherwise it
+ * starts a fresh send. A send that is still in flight (`busy`) is ignored so
+ * we never steer an agent that hasn't loaded yet.
  */
 export function useChatSession(getSessionId: () => string) {
   const chat = useChatStore()
@@ -27,10 +32,20 @@ export function useChatSession(getSessionId: () => string) {
   const streamText = computed(() => streaming.value.textBuf)
   const streamThinking = computed(() => streaming.value.thinkingBuf)
 
-  async function send(): Promise<void> {
+  /** Enter-to-send: steer while running, otherwise send. */
+  async function submit(): Promise<void> {
     const text = input.value.trim()
-    if (!text || running.value) return
+    if (!text || busy.value) return
     actionError.value = null
+    if (running.value) {
+      try {
+        await chat.steer(getSessionId(), text)
+        input.value = ""
+      } catch (err) {
+        actionError.value = err instanceof Error ? err.message : String(err)
+      }
+      return
+    }
     busy.value = true
     input.value = ""
     try {
@@ -40,30 +55,6 @@ export function useChatSession(getSessionId: () => string) {
       actionError.value = err instanceof Error ? err.message : String(err)
     } finally {
       busy.value = false
-    }
-  }
-
-  async function steer(): Promise<void> {
-    const text = input.value.trim()
-    if (!text) return
-    actionError.value = null
-    try {
-      await chat.steer(getSessionId(), text)
-      input.value = ""
-    } catch (err) {
-      actionError.value = err instanceof Error ? err.message : String(err)
-    }
-  }
-
-  async function followUp(): Promise<void> {
-    const text = input.value.trim()
-    if (!text) return
-    actionError.value = null
-    try {
-      await chat.followUp(getSessionId(), text)
-      input.value = ""
-    } catch (err) {
-      actionError.value = err instanceof Error ? err.message : String(err)
     }
   }
 
@@ -86,16 +77,6 @@ export function useChatSession(getSessionId: () => string) {
     }
   }
 
-  async function forkLatest(): Promise<void> {
-    actionError.value = null
-    try {
-      const forked = await sessions.forkSession(getSessionId())
-      await sessions.openSession(forked.id)
-    } catch (err) {
-      actionError.value = err instanceof Error ? err.message : String(err)
-    }
-  }
-
   return {
     session,
     messages,
@@ -107,11 +88,8 @@ export function useChatSession(getSessionId: () => string) {
     actionError,
     streamText,
     streamThinking,
-    send,
-    steer,
-    followUp,
+    submit,
     abort,
     forkHere,
-    forkLatest,
   }
 }

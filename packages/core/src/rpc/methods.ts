@@ -57,6 +57,10 @@ export function registerRpcMethods(server: JsonRpcServer, app: CoreApp): void {
 		const q = params(p);
 		return app.updateSessionModel(q.id, q.model);
 	});
+	server.register(RpcMethod.sessionsUpdateThinkingLevel, (p) => {
+		const q = params(p);
+		return app.updateSessionThinkingLevel(q.id, q.thinkingLevel);
+	});
 
 	// Chat
 	server.register(RpcMethod.chatSend, (p) => {

@@ -9,7 +9,7 @@ export { THINKING_LEVELS }
 
 // el-select can't hold undefined as a selectable option value — the "default"
 // choice is a sentinel string mapped to undefined at the API edge.
-export const THINKING_DEFAULT = "__default__"
+export const THINKING_DEFAULT = "auto"
 
 /** Type guard for the persisted thinking-level value at the save boundary. */
 function isThinkingLevel(v: string): v is ThinkingLevel {

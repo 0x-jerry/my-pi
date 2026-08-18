@@ -17,6 +17,13 @@ export function fmtUsage(
   return `in ${u.input} · out ${u.output} · cache ${u.cacheRead + u.cacheWrite} · $${u.cost.toFixed(4)}`
 }
 
+/** Compact per-message usage line (total tokens + cost). */
+export function fmtMsgUsage(
+  u: Pick<UsageSummary, "totalTokens" | "cost">,
+): string {
+  return `${u.totalTokens.toLocaleString()} tok · $${u.cost.toFixed(4)}`
+}
+
 /** Pretty-print tool call arguments (never throws). */
 export function jsonArgs(args: unknown): string {
   try {

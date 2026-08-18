@@ -4,6 +4,7 @@ import {
   type CreateSessionInput,
   type SessionInfo,
   type StoredMessage,
+  type ThinkingLevel,
 } from "@my-pi/shared"
 import type { WorkspaceStore } from "./workspaceStore"
 import type { RpcClient } from "../rpc/client"
@@ -177,6 +178,24 @@ export class SessionStore {
     const updated = await this.client.call(
       RpcMethod.sessionsUpdateModel,
       { id, model },
+    )
+    const wsId = this.sessionById(id)?.workspaceId
+    const list = wsId ? this.state.sessionsByWorkspace[wsId] : undefined
+    if (list) {
+      const idx = list.findIndex((s) => s.id === id)
+      if (idx !== -1) list[idx] = updated
+    }
+    return updated
+  }
+
+  /** Persist a per-session thinking-level override chosen in the composer. */
+  async updateThinkingLevel(
+    id: string,
+    thinkingLevel: ThinkingLevel | null,
+  ): Promise<SessionInfo> {
+    const updated = await this.client.call(
+      RpcMethod.sessionsUpdateThinkingLevel,
+      { id, thinkingLevel },
     )
     const wsId = this.sessionById(id)?.workspaceId
     const list = wsId ? this.state.sessionsByWorkspace[wsId] : undefined

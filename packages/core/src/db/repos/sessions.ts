@@ -169,4 +169,13 @@ export class SessionsRepo {
 			)
 			.run(provider, modelId, now, id);
 	}
+
+	updateThinkingLevel(id: string, thinkingLevel: ThinkingLevel | null): void {
+		const now = Date.now();
+		this.db
+			.query(
+				`UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE id = ?`,
+			)
+			.run(thinkingLevel, now, id);
+	}
 }

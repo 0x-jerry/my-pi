@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type {
-	CreateSessionInput,
-	SessionInfo,
-	SessionStatus,
-	ThinkingLevel,
-	UsageSummary,
+import {
+	THINKING_LEVELS,
+	type CreateSessionInput,
+	type SessionInfo,
+	type SessionStatus,
+	type ThinkingLevel,
+	type UsageSummary,
 } from "@my-pi/shared";
 import {
 	MessagesRepo,
@@ -163,6 +164,23 @@ export class SessionService {
 	): SessionInfo {
 		if (!this.sessions.byId(id)) throw new Error(`Session not found: ${id}`);
 		this.sessions.updateModel(id, model.provider, model.id);
+		return this.get(id);
+	}
+
+	/**
+	 * Override the thinking level for a single session (chat composer
+	 * per-session select). `null` clears the override (falls back to the
+	 * agent default / settings default on resume).
+	 */
+	updateThinkingLevel(
+		id: string,
+		thinkingLevel: ThinkingLevel | null,
+	): SessionInfo {
+		if (!this.sessions.byId(id)) throw new Error(`Session not found: ${id}`);
+		if (thinkingLevel !== null && !THINKING_LEVELS.includes(thinkingLevel)) {
+			throw new Error(`Invalid thinking level: ${thinkingLevel}`);
+		}
+		this.sessions.updateThinkingLevel(id, thinkingLevel);
 		return this.get(id);
 	}
 

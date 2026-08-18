@@ -6,6 +6,7 @@ import type {
 	CreateWorkspaceInput,
 	SessionInfo,
 	StoredMessage,
+	ThinkingLevel,
 	TokenUsageRow,
 	Workspace,
 } from "@my-pi/shared";
@@ -299,6 +300,13 @@ export class CoreApp {
 			throw new Error(`Unknown model: ${model.provider}/${model.id}`);
 		}
 		return this.sessions.updateModel(id, model);
+	}
+
+	updateSessionThinkingLevel(
+		id: string,
+		thinkingLevel: ThinkingLevel | null,
+	): SessionInfo {
+		return this.sessions.updateThinkingLevel(id, thinkingLevel);
 	}
 
 	forkSession(id: string, uptoSeq?: number): SessionInfo {

@@ -88,6 +88,7 @@ function fakeStore(overrides: Partial<FakeStoreState> = {}) {
       forkSession: vi.fn(async () => ({ id: "fork1" })),
       openSession: vi.fn(async () => {}),
       updateModel: vi.fn(async () => ({})),
+      updateThinkingLevel: vi.fn(async () => ({})),
     },
     models: {
       state: reactive({ providers: [], models: {} }),
@@ -109,7 +110,6 @@ function fakeStore(overrides: Partial<FakeStoreState> = {}) {
         },
       sendMessage: vi.fn(async () => {}),
       steer: vi.fn(async () => {}),
-      followUp: vi.fn(async () => {}),
       abort: vi.fn(async () => {}),
     },
   }
@@ -203,7 +203,7 @@ describe("ChatView", () => {
     expect(wrapper.text()).toContain("thinking…")
     expect(wrapper.text()).toContain("bash")
     // Abort control is available while running
-    expect(wrapper.text()).toContain("Abort")
+    expect(wrapper.find("button.abort-btn").exists()).toBe(true)
   })
 
   test("abort button calls store.abort with the session id", async () => {
@@ -217,22 +217,22 @@ describe("ChatView", () => {
       pendingSend: null,
     }
     const wrapper = mountChat(store)
-    await wrapper.find("button.el-button--danger").trigger("click")
+    await wrapper.find("button.abort-btn").trigger("click")
     expect(store.chat.abort).toHaveBeenCalledWith("s1")
   })
 
-  test("send calls store.sendMessage and clears the input", async () => {
+  test("enter sends via store.sendMessage and clears the input", async () => {
     const store = fakeStore()
     const wrapper = mountChat(store)
     const textarea = wrapper.find("textarea")
     await textarea.setValue("hello pi")
-    await wrapper.find("button.el-button--primary").trigger("click")
+    await textarea.trigger("keydown.enter")
 
     expect(store.chat.sendMessage).toHaveBeenCalledWith("s1", "hello pi")
     expect((textarea.element as HTMLTextAreaElement).value).toBe("")
   })
 
-  test("send is disabled while streaming", async () => {
+  test("enter while running steers instead of sending", async () => {
     const store = fakeStore()
     store.chat.state.streaming.s1 = {
       status: "running",
@@ -243,8 +243,42 @@ describe("ChatView", () => {
       pendingSend: null,
     }
     const wrapper = mountChat(store)
-    const sendBtn = wrapper.find("button.el-button--primary")
-    expect((sendBtn.element as HTMLButtonElement).disabled).toBe(true)
+    const textarea = wrapper.find("textarea")
+    await textarea.setValue("redirect")
+    await textarea.trigger("keydown.enter")
+
+    expect(store.chat.steer).toHaveBeenCalledWith("s1", "redirect")
+    expect(store.chat.sendMessage).not.toHaveBeenCalled()
+    expect((textarea.element as HTMLTextAreaElement).value).toBe("")
+  })
+
+  test("renders provider/model and token usage below the message with an icon fork button", () => {
+    const store = fakeStore()
+    store.sessions.state.messagesBySession.s1 = [
+      message({
+        id: "m-s1-1",
+        role: "assistant",
+        provider: "anthropic",
+        model: "claude",
+        usage: {
+          input: 10,
+          output: 20,
+          cacheRead: 5,
+          cacheWrite: 0,
+          totalTokens: 35,
+          cost: 0.0012,
+        },
+        data: {
+          role: "assistant",
+          content: [{ type: "text", text: "hi there" }],
+        },
+      }),
+    ]
+    const wrapper = mountChat(store)
+    expect(wrapper.text()).toContain("anthropic / claude")
+    expect(wrapper.text()).toContain("35 tok")
+    expect(wrapper.text()).toContain("$0.0012")
+    expect(wrapper.find("button.fork-here").exists()).toBe(true)
   })
 
   test("shows last-run usage in the footer", () => {

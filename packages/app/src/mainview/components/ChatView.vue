@@ -16,22 +16,15 @@ const {
   actionError,
   streamText,
   streamThinking,
-  send,
-  steer,
-  followUp,
+  submit,
   abort,
   forkHere,
-  forkLatest,
 } = useChatSession(() => props.sessionId)
 </script>
 
 <template>
   <section class="chat">
-    <ChatHeader
-      :session="session"
-      :has-messages="messages.length > 0"
-      @fork="forkLatest"
-    />
+    <ChatHeader :session="session" />
 
     <el-alert
       v-if="actionError"
@@ -62,11 +55,10 @@ const {
 
     <ChatComposer
       v-model:input="input"
+      :session="session"
       :usage="usage"
       :running="running"
-      @send="send"
-      @steer="steer"
-      @follow-up="followUp"
+      @submit="submit"
       @abort="abort"
     />
   </section>

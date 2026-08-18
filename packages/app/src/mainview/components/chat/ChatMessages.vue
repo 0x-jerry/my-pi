@@ -3,7 +3,7 @@ import { ref } from "vue"
 import type { StoredMessage } from "@my-pi/shared"
 import type { StreamingState } from "../../store"
 import { messageError, renderStoredMessage } from "../../utils/render"
-import { jsonArgs } from "../../utils/format"
+import { fmtMsgUsage, jsonArgs } from "../../utils/format"
 import { useChatDisplay } from "../../hooks/chat/useChatDisplay"
 import { useStreamScroll } from "../../hooks/chat/useStreamScroll"
 import IconFork from "~icons/hugeicons/fork"
@@ -23,8 +23,8 @@ useStreamScroll(
   scroller,
 )
 
-function msgModel(msg: StoredMessage): string {
-  return msg.model ?? ""
+function msgLabel(msg: StoredMessage): string {
+  return [msg.provider, msg.model].filter(Boolean).join(" / ")
 }
 </script>
 
@@ -39,58 +39,72 @@ function msgModel(msg: StoredMessage): string {
     >
       <div class="msg-meta">
         <span class="msg-role">{{ msg.role }}</span>
-        <span v-if="msgModel(msg)" class="msg-model">{{ msgModel(msg) }}</span>
-        <el-button
-          text
-          size="small"
-          class="fork-here"
-          :icon="IconFork"
-          @click="emit('forkHere', msg)"
-        >
-          fork here
-        </el-button>
       </div>
-      <template v-for="(block, i) in renderStoredMessage(msg)" :key="`${msg.id}-${i}`">
-        <p v-if="block.kind === 'text'" class="text">{{ block.text }}</p>
-
-        <details
-          v-else-if="block.kind === 'thinking'"
-          class="thinking"
-          :open="!isCollapsed(msg.id)"
-          @toggle="toggleThinking(msg.id)"
+      <div class="msg-body">
+        <template
+          v-for="(block, i) in renderStoredMessage(msg)"
+          :key="`${msg.id}-${i}`"
         >
-          <summary>thinking{{ block.redacted ? " (redacted)" : "" }}</summary>
-          <pre>{{ block.text }}</pre>
-        </details>
+          <p v-if="block.kind === 'text'" class="text">{{ block.text }}</p>
 
-        <img
-          v-else-if="block.kind === 'image'"
-          class="image"
-          :src="`data:${block.mimeType};base64,${block.data}`"
-          alt="message image"
-        />
+          <details
+            v-else-if="block.kind === 'thinking'"
+            class="thinking"
+            :open="!isCollapsed(msg.id)"
+            @toggle="toggleThinking(msg.id)"
+          >
+            <summary>thinking{{ block.redacted ? " (redacted)" : "" }}</summary>
+            <pre>{{ block.text }}</pre>
+          </details>
 
-        <div v-else-if="block.kind === 'toolCall'" class="tool-call">
-          <div class="tool-head">
-            <span class="tool-name">{{ block.toolName }}</span>
-            <el-tag size="small" effect="plain" type="info" class="tool-id">
-              {{ block.toolCallId.slice(0, 8) }}
-            </el-tag>
+          <img
+            v-else-if="block.kind === 'image'"
+            class="image"
+            :src="`data:${block.mimeType};base64,${block.data}`"
+            alt="message image"
+          />
+
+          <div v-else-if="block.kind === 'toolCall'" class="tool-call">
+            <div class="tool-head">
+              <span class="tool-name">{{ block.toolName }}</span>
+              <el-tag size="small" effect="plain" type="info" class="tool-id">
+                {{ block.toolCallId.slice(0, 8) }}
+              </el-tag>
+            </div>
+            <pre class="tool-args">{{ jsonArgs(block.args) }}</pre>
           </div>
-          <pre class="tool-args">{{ jsonArgs(block.args) }}</pre>
-        </div>
 
-        <div v-else-if="block.kind === 'toolResult'" class="tool-result" :class="{ error: block.isError }">
-          <div class="tool-head">
-            <span class="tool-name">{{ block.toolName }}</span>
-            <el-tag size="small" :type="block.isError ? 'danger' : 'success'">
-              {{ block.isError ? "error" : "ok" }}
-            </el-tag>
+          <div
+            v-else-if="block.kind === 'toolResult'"
+            class="tool-result"
+            :class="{ error: block.isError }"
+          >
+            <div class="tool-head">
+              <span class="tool-name">{{ block.toolName }}</span>
+              <el-tag size="small" :type="block.isError ? 'danger' : 'success'">
+                {{ block.isError ? "error" : "ok" }}
+              </el-tag>
+            </div>
+            <pre v-if="block.text" class="tool-text">{{ block.text }}</pre>
           </div>
-          <pre v-if="block.text" class="tool-text">{{ block.text }}</pre>
-        </div>
-      </template>
-      <p v-if="messageError(msg)" class="msg-error">{{ messageError(msg) }}</p>
+        </template>
+        <p v-if="messageError(msg)" class="msg-error">{{ messageError(msg) }}</p>
+      </div>
+      <div class="msg-foot">
+        <span v-if="msgLabel(msg)" class="msg-model">{{ msgLabel(msg) }}</span>
+        <span v-if="msg.usage" class="msg-usage">{{ fmtMsgUsage(msg.usage) }}</span>
+        <el-tooltip content="Fork here" placement="top">
+          <el-button
+            text
+            circle
+            size="small"
+            class="fork-here"
+            :icon="IconFork"
+            aria-label="Fork here"
+            @click="emit('forkHere', msg)"
+          />
+        </el-tooltip>
+      </div>
     </article>
 
     <!-- optimistic pending send -->
@@ -181,14 +195,26 @@ function msgModel(msg: StoredMessage): string {
   color: var(--fg-dim);
   font-weight: 600;
 }
+.msg-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.msg.user .msg-foot {
+  justify-content: flex-end;
+}
 .msg-model {
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+.msg-usage {
   font-size: 11px;
   color: var(--fg-dim);
 }
 .fork-here {
   padding: 0;
   height: auto;
-  font-size: 11px;
 }
 .text {
   margin: 0;
