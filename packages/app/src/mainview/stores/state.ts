@@ -22,6 +22,9 @@ export function createState() {
     connectionState: "closed" as ConnectionState,
     workspaces: [] as Workspace[],
     activeWorkspaceId: null as string | null,
+    /** Per-workspace session lists; each tree node lazy-loads its own on expand. */
+    sessionsByWorkspace: {} as Record<string, SessionInfo[]>,
+    /** Active workspace's session list (alias of sessionsByWorkspace[active]). */
     sessions: [] as SessionInfo[],
     activeSessionId: null as string | null,
     drafts: [] as DraftSession[],

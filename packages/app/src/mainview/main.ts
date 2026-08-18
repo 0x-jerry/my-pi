@@ -1,4 +1,5 @@
 // Element Plus light theme first, then app overrides (app.css wins on :root vars).
+import 'normalize.css'
 import "element-plus/dist/index.css"
 import "./app.css"
 import { createApp } from "vue"

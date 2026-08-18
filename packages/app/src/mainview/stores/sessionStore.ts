@@ -19,11 +19,49 @@ export class SessionStore {
   }
 
   async load(workspaceId: string): Promise<void> {
-    this.state.sessions = await this.client.call(
+    const list = await this.client.call(
       RpcMethod.sessionsList,
       { workspaceId },
     )
+    // The workspace may have been removed while the RPC was in flight; don't
+    // resurrect its cache entry. Only skip when the list is known to be
+    // loaded (never-loaded lists, e.g. in unit tests, are trusted).
+    if (
+      this.state.workspaces.length > 0 &&
+      !this.state.workspaces.some((w) => w.id === workspaceId)
+    ) {
+      return
+    }
+    // Per-workspace cache so several tree nodes can stay expanded at once.
+    this.state.sessionsByWorkspace[workspaceId] = list
+    // Keep the flat alias (read by chat/header consumers) in sync when this
+    // is the active workspace. Same array reference, so in-place patches to
+    // the alias also update the cache.
+    if (this.state.activeWorkspaceId === workspaceId) {
+      this.state.sessions = list
+    }
   }
+
+  /** Sessions of one workspace from the per-workspace cache (lazily loaded). */
+  sessionsFor(workspaceId: string): SessionInfo[] {
+    return this.state.sessionsByWorkspace[workspaceId] ?? []
+  }
+
+  /** Look up a session by id across the caches, then the flat alias. */
+  sessionById(id: string): SessionInfo | null {
+    for (const list of Object.values(this.state.sessionsByWorkspace)) {
+      const found = list.find((s) => s.id === id)
+      if (found) return found
+    }
+    // The alias may hold rows written directly (tests, in-flight loads).
+    return this.state.sessions.find((s) => s.id === id) ?? null
+  }
+
+  /**
+   * Optional hook fired when opening a session switches the active workspace
+   * (e.g. lazy-load that workspace's plugins). Wired by the root facade.
+   */
+  onWorkspaceActivated?: (workspaceId: string) => void
 
   /** Fetch (or re-fetch) the transcript for one session into the store. */
   async loadMessages(sessionId: string): Promise<void> {
@@ -43,7 +81,10 @@ export class SessionStore {
   }
 
   async deleteSession(id: string): Promise<void> {
-    const wsId = this.state.activeWorkspaceId
+    // Refresh the session's own workspace list (may differ from the active
+    // one when several tree nodes are expanded).
+    const session = this.sessionById(id)
+    const wsId = session?.workspaceId ?? this.state.activeWorkspaceId
     await this.client.call(RpcMethod.sessionsDelete, { id })
     if (this.state.activeSessionId === id) this.state.activeSessionId = null
     // Evict per-session state so deleted sessions don't accumulate.
@@ -58,8 +99,7 @@ export class SessionStore {
       id,
       uptoSeq,
     })
-    const wsId = this.state.activeWorkspaceId
-    if (wsId) await this.load(wsId)
+    if (forked.workspaceId) await this.load(forked.workspaceId)
     return forked
   }
 
@@ -72,38 +112,59 @@ export class SessionStore {
       RpcMethod.sessionsUpdateModel,
       { id, model },
     )
-    const idx = this.state.sessions.findIndex((s) => s.id === id)
-    if (idx !== -1) this.state.sessions[idx] = updated
+    const wsId = this.sessionById(id)?.workspaceId
+    const list = wsId ? this.state.sessionsByWorkspace[wsId] : undefined
+    if (list) {
+      const idx = list.findIndex((s) => s.id === id)
+      if (idx !== -1) list[idx] = updated
+    }
     return updated
   }
 
+  /**
+   * Make `workspaceId` the active workspace: re-points the flat `state.sessions`
+   * alias at that workspace's cached list and fires the activation hook.
+   */
+  setActiveWorkspace(workspaceId: string): void {
+    this.state.activeWorkspaceId = workspaceId
+    this.state.sessions = this.state.sessionsByWorkspace[workspaceId] ?? []
+    this.onWorkspaceActivated?.(workspaceId)
+  }
+
   async openSession(id: string): Promise<void> {
+    // The active workspace follows the session being opened: with several
+    // tree nodes expanded, the session's workspace may differ from the
+    // currently active one, and acting on it should make it active.
+    const session = this.sessionById(id)
+    if (session && session.workspaceId !== this.state.activeWorkspaceId) {
+      this.setActiveWorkspace(session.workspaceId)
+    }
     this.state.activeSessionId = id
     await this.loadMessages(id)
   }
 
   // ---- refresh scheduling ----
 
-  private sessionsRefreshQueued = false
+  private sessionsRefreshPending = new Set<string>()
 
   /** Debounced (per-microtask) refetch of a workspace's session list. */
   private scheduleSessionsRefresh(workspaceId: string): void {
-    if (this.sessionsRefreshQueued) return
-    this.sessionsRefreshQueued = true
+    // Track pending workspace ids (not a single boolean) so concurrent
+    // settles in different workspaces each trigger their own refresh.
+    if (this.sessionsRefreshPending.has(workspaceId)) return
+    this.sessionsRefreshPending.add(workspaceId)
     queueMicrotask(() => {
-      this.sessionsRefreshQueued = false
+      this.sessionsRefreshPending.delete(workspaceId)
       void this.load(workspaceId).catch((err) => {
         this.state.error = err instanceof Error ? err.message : String(err)
       })
     })
   }
 
-  /** Refetch the active workspace's sessions only if the session is in it. */
+  /** Refetch the session's own workspace list (any expanded node stays fresh). */
   scheduleForSession(sessionId: string): void {
-    const wsId = this.state.activeWorkspaceId
-    if (!wsId) return
-    const session = this.state.sessions.find((s) => s.id === sessionId)
+    const session = this.sessionById(sessionId)
     if (!session) return
-    this.scheduleSessionsRefresh(wsId)
+    this.scheduleSessionsRefresh(session.workspaceId)
   }
 }

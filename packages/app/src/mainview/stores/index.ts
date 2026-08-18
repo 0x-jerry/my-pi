@@ -47,9 +47,20 @@ export class Store {
     this.settings = new SettingsStore(this.state, client, this.connection)
     this.plugins = new PluginStore(this.state, client, this.connection)
 
-    // Streaming-settle / status changes should refresh the session list.
+    // Streaming-settle / status changes should refresh the session list, and
+    // session rows may live in any workspace's cache (multi-node expansion).
     this.chat.sessionsRefresh = (id) => this.sessions.scheduleForSession(id)
+    this.chat.sessionLookup = (id) => this.sessions.sessionById(id)
     client.onRefreshAll = () => void this.refreshAll()
+
+    // Opening a session makes its workspace active; lazy-load that
+    // workspace's plugins, matching openWorkspace's behavior. (Drafts do not
+    // switch the active workspace — only real session selection does.)
+    this.sessions.onWorkspaceActivated = (workspaceId: string): void => {
+      void this.loadPluginsForWorkspace(workspaceId).catch((err) => {
+        this.state.error = err instanceof Error ? err.message : String(err)
+      })
+    }
   }
 
   /** Start the connection; `refreshAll()` runs on first connect. */
@@ -65,15 +76,17 @@ export class Store {
    * disconnected push no notifications to the new connection.
    */
   async refreshAll(): Promise<void> {
+    // Refresh every workspace whose sessions are cached (expanded nodes), plus
+    // the active workspace even if it was never expanded yet.
+    const workspaceIds = new Set(Object.keys(this.state.sessionsByWorkspace))
+    if (this.state.activeWorkspaceId) workspaceIds.add(this.state.activeWorkspaceId)
     await Promise.allSettled([
       this.loadWorkspaces(),
       this.loadProviders(),
       this.loadPluginsGlobal(),
       this.loadSettings(),
       this.connection.loadPersistedConnection(),
-      this.state.activeWorkspaceId
-        ? this.loadSessions(this.state.activeWorkspaceId)
-        : Promise.resolve(),
+      ...[...workspaceIds].map((id) => this.loadSessions(id)),
       this.state.activeSessionId && !this.isDraft(this.state.activeSessionId)
         ? this.loadMessages(this.state.activeSessionId)
         : Promise.resolve(),
@@ -81,21 +94,25 @@ export class Store {
   }
 
   async openWorkspace(id: string): Promise<void> {
-    this.state.activeWorkspaceId = id
     this.state.activeSessionId = null
+    // Re-point the active workspace and the flat alias immediately (the cache
+    // may be empty until load resolves); the activation hook lazy-loads the
+    // workspace's plugins.
+    this.sessions.setActiveWorkspace(id)
     await this.loadSessions(id)
-    void this.loadPluginsForWorkspace(id).catch((err) => {
-      this.state.error = err instanceof Error ? err.message : String(err)
-    })
   }
 
   async removeWorkspace(id: string): Promise<void> {
     await this.workspaces.removeWorkspaceRpc(id)
+    // The server also emits workspace.updated on removal, so the event handler
+    // performs the same cleanup; the explicit teardown here is an idempotent
+    // safety net for when the event hasn't landed yet.
     if (this.state.activeWorkspaceId === id) {
       this.state.activeWorkspaceId = null
       this.state.activeSessionId = null
       this.state.sessions = []
     }
+    delete this.state.sessionsByWorkspace[id]
     this.workspaces.clearDraftsOfWorkspace(id)
     await this.workspaces.loadWorkspacesRpc()
   }

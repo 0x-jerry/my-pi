@@ -152,7 +152,7 @@ describe("Store", () => {
     expect(client.calls[0].method).toBe(RpcMethod.workspacesRemove)
   })
 
-  test("createSession refetches sessions for the workspace", async () => {
+  test("createSession refetches sessions into the workspace cache", async () => {
     const s = makeSession()
     const { client, store } = setup({
       [RpcMethod.sessionsCreate]: () => s,
@@ -162,7 +162,9 @@ describe("Store", () => {
 
     const methods = client.calls.map((c) => c.method)
     expect(methods).toEqual([RpcMethod.sessionsCreate, RpcMethod.sessionsList])
-    expect(store.state.sessions).toHaveLength(1)
+    expect(store.state.sessionsByWorkspace.w1).toEqual([s])
+    // No active workspace yet, so the flat alias stays empty.
+    expect(store.state.sessions).toEqual([])
   })
 
   test("deleteSession clears the active session and refetches", async () => {
@@ -634,5 +636,150 @@ describe("Store", () => {
     await store.removeWorkspace("w1")
 
     expect(store.state.drafts.map((d) => d.workspaceId)).toEqual(["w2"])
+  })
+
+  test("openSession from a non-active workspace switches active workspace and re-aliases", async () => {
+    const s1 = makeSession({ id: "s1", workspaceId: "w1" })
+    const s2 = makeSession({ id: "s2", workspaceId: "w2" })
+    const { store } = setup({
+      [RpcMethod.sessionsMessages]: () => [],
+    })
+    store.state.activeWorkspaceId = "w1"
+    store.state.sessionsByWorkspace.w1 = [s1]
+    store.state.sessionsByWorkspace.w2 = [s2]
+    store.state.sessions = store.state.sessionsByWorkspace.w1
+
+    await store.openSession("s2")
+
+    expect(store.state.activeWorkspaceId).toBe("w2")
+    // The flat alias now points at the newly active workspace's cached array.
+    expect(store.state.sessions).toBe(store.state.sessionsByWorkspace.w2)
+    expect(store.state.activeSessionId).toBe("s2")
+  })
+
+  test("sessionById falls back to the flat alias list", () => {
+    const s = makeSession()
+    const { store } = setup()
+    store.state.sessions = [s]
+    // Same row as the alias array holds (reactive proxy, hence toBe on the element).
+    expect(store.sessions.sessionById("s1")).toBe(store.state.sessions[0])
+  })
+
+  test("removeWorkspace evicts the removed workspace's session cache", async () => {
+    const { store } = setup({
+      [RpcMethod.workspacesRemove]: () => undefined,
+      [RpcMethod.workspacesList]: () => [],
+    })
+    store.state.activeWorkspaceId = "w1"
+    store.state.sessionsByWorkspace.w1 = [makeSession({ workspaceId: "w1" })]
+
+    await store.removeWorkspace("w1")
+
+    expect(store.state.sessionsByWorkspace.w1).toBeUndefined()
+  })
+
+  test("deleteSession refreshes the session's own workspace list when not active", async () => {
+    const s2 = makeSession({ id: "s2", workspaceId: "w2" })
+    const { client, store } = setup({
+      [RpcMethod.sessionsDelete]: () => undefined,
+      [RpcMethod.sessionsList]: () => [],
+    })
+    store.state.activeWorkspaceId = "w1"
+    store.state.sessionsByWorkspace.w1 = [
+      makeSession({ id: "s1", workspaceId: "w1" }),
+    ]
+    store.state.sessionsByWorkspace.w2 = [s2]
+
+    await store.deleteSession("s2")
+
+    const listCall = client.calls.find((c) => c.method === RpcMethod.sessionsList)
+    expect(listCall?.params).toEqual({ workspaceId: "w2" })
+    expect(store.state.sessionsByWorkspace.w2).toEqual([])
+  })
+
+  test("refreshAll reloads sessions of every cached workspace", async () => {
+    const { client, store } = setup({
+      [RpcMethod.workspacesList]: () => [
+        makeWorkspace(),
+        makeWorkspace({ id: "w2", path: "/tmp/ws2" }),
+      ],
+      [RpcMethod.modelsProviders]: () => [],
+      [RpcMethod.pluginsList]: () => [],
+      [RpcMethod.settingsGetAll]: () => ({}),
+      [RpcMethod.sessionsList]: () => [],
+    })
+    store.state.sessionsByWorkspace.w1 = []
+    store.state.sessionsByWorkspace.w2 = []
+
+    await store.refreshAll()
+
+    const listCalls = client.calls.filter(
+      (c) => c.method === RpcMethod.sessionsList,
+    )
+    expect(listCalls.map((c) => c.params)).toEqual(
+      expect.arrayContaining([{ workspaceId: "w1" }, { workspaceId: "w2" }]),
+    )
+  })
+
+  test("scheduleForSession refreshes each workspace independently", async () => {
+    const { client, store } = setup({
+      [RpcMethod.sessionsList]: () => [],
+    })
+    store.state.sessionsByWorkspace.w1 = [
+      makeSession({ id: "s1", workspaceId: "w1" }),
+    ]
+    store.state.sessionsByWorkspace.w2 = [
+      makeSession({ id: "s2", workspaceId: "w2" }),
+    ]
+
+    store.sessions.scheduleForSession("s1")
+    store.sessions.scheduleForSession("s2")
+    await flush()
+
+    const listCalls = client.calls.filter(
+      (c) => c.method === RpcMethod.sessionsList,
+    )
+    expect(listCalls.map((c) => c.params)).toEqual(
+      expect.arrayContaining([{ workspaceId: "w1" }, { workspaceId: "w2" }]),
+    )
+  })
+
+  test("late session load does not resurrect a removed workspace's cache", async () => {
+    const { store } = setup({
+      [RpcMethod.sessionsList]: () => [makeSession()],
+    })
+    // Workspace list is loaded and w1 is no longer in it.
+    store.state.workspaces = [makeWorkspace({ id: "w2", path: "/tmp/ws2" })]
+
+    await store.sessions.load("w1")
+
+    expect(store.state.sessionsByWorkspace.w1).toBeUndefined()
+  })
+
+  test("session load stores into the cache when the workspace exists", async () => {
+    const s = makeSession()
+    const { store } = setup({
+      [RpcMethod.sessionsList]: () => [s],
+    })
+    store.state.workspaces = [makeWorkspace()]
+
+    await store.sessions.load("w1")
+
+    expect(store.state.sessionsByWorkspace.w1).toEqual([s])
+  })
+
+  test("openWorkspace re-points the flat alias at the workspace cache", async () => {
+    const s = makeSession()
+    const { store } = setup({
+      [RpcMethod.sessionsList]: () => [s],
+      [RpcMethod.pluginsList]: () => [],
+    })
+    store.state.sessionsByWorkspace.w1 = [s]
+
+    await store.openWorkspace("w1")
+
+    expect(store.state.activeWorkspaceId).toBe("w1")
+    expect(store.state.activeSessionId).toBeNull()
+    expect(store.state.sessions).toBe(store.state.sessionsByWorkspace.w1)
   })
 })

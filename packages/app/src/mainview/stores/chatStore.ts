@@ -2,6 +2,7 @@ import {
   RpcEvent,
   RpcMethod,
   type RpcNotifications,
+  type SessionInfo,
 } from "@my-pi/shared"
 import type { ConnectionStore } from "./connectionStore"
 import type { AppState } from "./state"
@@ -22,6 +23,13 @@ export class ChatStore {
    * workspace's sessions when a run settles or status changes.
    */
   sessionsRefresh?: (sessionId: string) => void
+
+  /**
+   * Set by the root facade: resolve a session row from any workspace's cache
+   * (several tree nodes can be expanded, so the row may not belong to the
+   * active workspace). Falls back to the active list when unset.
+   */
+  sessionLookup?: (sessionId: string) => SessionInfo | null
 
   constructor(state: AppState, client: RpcClient, connection: ConnectionStore) {
     this.state = state
@@ -90,7 +98,9 @@ export class ChatStore {
     }
     // Reflect the status locally right away (no RPC); the persisted row only
     // changes at settle, so a real refetch happens there (see run_end).
-    const local = this.state.sessions.find((s) => s.id === sessionId)
+    const local = this.sessionLookup
+      ? this.sessionLookup(sessionId)
+      : this.state.sessions.find((s) => s.id === sessionId)
     if (local) {
       local.status = status
     }
@@ -182,7 +192,9 @@ export class ChatStore {
     p: RpcNotifications["session.title_updated"],
   ): void {
     const { sessionId, title, updatedAt } = p
-    const row = this.state.sessions.find((s) => s.id === sessionId)
+    const row = this.sessionLookup
+      ? this.sessionLookup(sessionId)
+      : this.state.sessions.find((s) => s.id === sessionId)
     if (row) {
       row.title = title
       // Keep recency in sync with the server (updateTitle bumps updated_at).

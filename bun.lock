@@ -29,6 +29,7 @@
         "@vueuse/core": "^14.4.0",
         "electrobun": "1.18.1",
         "element-plus": "^2.14.4",
+        "normalize.css": "^8.0.1",
         "vue": "^3.5.41",
         "vue-router": "^5.2.0",
       },
@@ -691,6 +692,8 @@
     "nopt": ["nopt@7.2.1", "https://registry.npmmirror.com/nopt/-/nopt-7.2.1.tgz", { "dependencies": { "abbrev": "^2.0.0" }, "bin": { "nopt": "bin/nopt.js" } }, "sha512-taM24ViiimT/XntxbPyJQzCG+p4EKOpgD3mxFwW38mGjVUrfERQOeY4EDHjdnptttfHuHQXFx+lTP08Q+mLa/w=="],
 
     "normalize-wheel-es": ["normalize-wheel-es@1.2.0", "https://registry.npmmirror.com/normalize-wheel-es/-/normalize-wheel-es-1.2.0.tgz", {}, "sha512-Wj7+EJQ8mSuXr2iWfnujrimU35R2W4FAErEyTmJoJ7ucwTn2hOUSsRehMb5RSYkxXGTM7Y9QpvPmp++w5ftoJw=="],
+
+    "normalize.css": ["normalize.css@8.0.1", "https://registry.npmmirror.com/normalize.css/-/normalize.css-8.0.1.tgz", {}, "sha512-qizSNPO93t1YUuUhP22btGOo3chcvDFqFaj2TRybP0DMxkHOCTYwp3n34fel4a31ORXy4m1Xq0Gyqpb5m33qIg=="],
 
     "nostics": ["nostics@1.2.0", "https://registry.npmmirror.com/nostics/-/nostics-1.2.0.tgz", {}, "sha512-FGqEfhQjrvo1lL8KFifdTQiNwwQHJxC1jtYE1Rc54qF/jxONUNL+kC9gS1krX8Q65PgrQ5fCqH/I4NhWBvdSqg=="],
 

@@ -35,6 +35,9 @@ const workspaces = useWorkspaceStore()
   display: flex;
   align-items: center;
   gap: 2px;
+  /* Fixed height = default el-button height, so revealing the action
+     buttons on hover never changes the row's height. */
+  height: 32px;
   border-radius: 6px;
 }
 .session-row:hover {
@@ -46,7 +49,8 @@ const workspaces = useWorkspaceStore()
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  height: 100%;
+  padding: 0 8px;
   border: none;
   border-radius: 6px;
   background: transparent;

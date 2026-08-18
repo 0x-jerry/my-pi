@@ -91,11 +91,16 @@ export class WorkspaceStore {
     // shows the refreshed list and a failed reload leaves active state intact
     // (matches the original await-first behaviour).
     await this.load()
+    // Today the server only emits workspace.updated on removal; if the
+    // workspace is still present (future rename/reindex events) keep its
+    // tree, session cache and drafts intact.
+    if (this.state.workspaces.some((w) => w.id === workspaceId)) return
     if (this.state.activeWorkspaceId === workspaceId) {
       this.state.activeWorkspaceId = null
       this.state.activeSessionId = null
       this.state.sessions = []
     }
+    delete this.state.sessionsByWorkspace[workspaceId]
     this.clearDraftsOfWorkspace(workspaceId)
   }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue"
+import { computed, ref } from "vue"
 import type { Workspace } from "@my-pi/shared"
 import { useWorkspaceStore, useSessionStore } from "../stores"
 import { useWorkspaceNode } from "../hooks/workspace/useWorkspaceNode"
@@ -15,24 +15,59 @@ import DraftItem from "./DraftItem.vue"
 const props = defineProps<{ ws: Workspace }>()
 const workspaces = useWorkspaceStore()
 const sessions = useSessionStore()
-const { open, remove, newSession } = useWorkspaceNode()
+const { remove, newSession } = useWorkspaceNode()
 
 const isActive = computed(() => workspaces.state.activeWorkspaceId === props.ws.id)
-/** Local placeholder nodes of this workspace's expanded (active) subtree. */
+/**
+ * This node owns its own expand state (not derived from the active
+ * workspace), so several nodes can be expanded at the same time.
+ */
+const expanded = ref(false)
+
+/** This workspace's sessions from the per-workspace store cache. */
+const nodeSessions = computed(() => sessions.sessionsFor(props.ws.id))
+/** Local placeholder nodes of this workspace's expanded subtree. */
 const drafts = computed(() =>
   workspaces.state.drafts.filter((d) => d.workspaceId === props.ws.id),
 )
+
+/** True while this workspace's sessions are being fetched on expand. */
+const loading = ref(false)
+
+/** Toggle this node's own expansion; never switches the active workspace. */
+function toggle(): void {
+  expanded.value = !expanded.value
+  if (expanded.value) {
+    // Ensure this workspace's sessions are in the per-workspace cache (they
+    // may not be loaded yet if the node was never expanded before).
+    loading.value = true
+    void sessions
+      .load(props.ws.id)
+      .catch((err) => {
+        sessions.state.error = err instanceof Error ? err.message : String(err)
+      })
+      .finally(() => {
+        loading.value = false
+      })
+  }
+}
+
+/** Start a session and expand the node so the draft placeholder is visible. */
+async function onNewSession(): Promise<void> {
+  expanded.value = true
+  await newSession(props.ws)
+}
 </script>
 
 <template>
   <li class="ws-node">
-    <div class="ws-row" :class="{ active: isActive }" @click="open(ws)">
+    <div class="ws-row" :class="{ active: isActive }" @click="toggle">
       <el-icon class="chevron">
-        <IconArrowDown v-if="isActive" />
+        <IconArrowDown v-if="expanded" />
         <IconArrowRight v-else />
       </el-icon>
       <el-icon class="ws-icon">
-        <IconFolderOpen v-if="isActive" />
+        <IconFolderOpen v-if="expanded" />
         <IconFolder v-else />
       </el-icon>
       <span class="ws-name">{{ ws.name }}</span>
@@ -44,7 +79,7 @@ const drafts = computed(() =>
             circle
             :icon="IconPlus"
             aria-label="New session"
-            @click.stop="newSession(ws)"
+            @click.stop="onNewSession"
           />
         </el-tooltip>
         <el-tooltip content="Remove workspace" placement="top">
@@ -60,10 +95,10 @@ const drafts = computed(() =>
       </span>
     </div>
 
-    <ul v-if="isActive" class="children">
+    <ul v-if="expanded" class="children">
       <DraftItem v-for="d in drafts" :key="d.localId" :local-id="d.localId" />
-      <SessionItem v-for="s in sessions.state.sessions" :key="s.id" :session="s" />
-      <li v-if="sessions.state.sessions.length === 0 && drafts.length === 0" class="empty">
+      <SessionItem v-for="s in nodeSessions" :key="s.id" :session="s" />
+      <li v-if="!loading && nodeSessions.length === 0 && drafts.length === 0" class="empty">
         No sessions yet — click + to start one.
       </li>
     </ul>
@@ -78,7 +113,10 @@ const drafts = computed(() =>
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
+  /* Fixed height = default el-button height, so revealing the action
+     buttons (hover/active) never changes the node's height. */
+  height: 32px;
+  padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
