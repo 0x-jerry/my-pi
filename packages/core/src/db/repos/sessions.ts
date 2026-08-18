@@ -160,4 +160,13 @@ export class SessionsRepo {
 			.query(`UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?`)
 			.run(title, now, id);
 	}
+
+	updateModel(id: string, provider: string, modelId: string): void {
+		const now = Date.now();
+		this.db
+			.query(
+				`UPDATE sessions SET model_provider = ?, model_id = ?, updated_at = ? WHERE id = ?`,
+			)
+			.run(provider, modelId, now, id);
+	}
 }

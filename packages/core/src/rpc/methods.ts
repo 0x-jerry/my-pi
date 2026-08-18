@@ -49,6 +49,10 @@ export function registerRpcMethods(server: JsonRpcServer, app: CoreApp): void {
 	server.register(RpcMethod.sessionsUsage, (p) =>
 		app.getTokenUsage(params(p).id),
 	);
+	server.register(RpcMethod.sessionsUpdateModel, (p) => {
+		const q = params(p);
+		return app.updateSessionModel(q.id, q.model);
+	});
 
 	// Chat
 	server.register(RpcMethod.chatSend, (p) => {

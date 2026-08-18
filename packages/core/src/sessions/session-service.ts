@@ -106,9 +106,10 @@ export class SessionService {
 		if (!this.workspaces.byId(input.workspaceId)) {
 			throw new Error(`Workspace not found: ${input.workspaceId}`);
 		}
+		// Sessions run on the chat model by default (per-session override wins).
 		const model =
 			input.model ??
-			this.settings.get<{ provider: string; id: string }>("defaultModel");
+			this.settings.get<{ provider: string; id: string }>("chatModel");
 		const thinkingLevel =
 			input.thinkingLevel ??
 			this.settings.get<ThinkingLevel>("defaultThinkingLevel");
@@ -152,6 +153,16 @@ export class SessionService {
 		this.usage.deleteBySession(id);
 		this.messages.deleteBySession(id);
 		this.sessions.remove(id);
+	}
+
+	/** Override the model for a single session (chat header per-session select). */
+	updateModel(
+		id: string,
+		model: { provider: string; id: string },
+	): SessionInfo {
+		if (!this.sessions.byId(id)) throw new Error(`Session not found: ${id}`);
+		this.sessions.updateModel(id, model.provider, model.id);
+		return this.get(id);
 	}
 
 	/** Replace the session title (used by LLM auto-titling). */

@@ -108,18 +108,18 @@ export class Store {
   async sendDraft(localId: string, text: string): Promise<void> {
     const draft = this.state.drafts.find((d) => d.localId === localId)
     if (!draft) throw new Error("Draft session not found")
-    // A draft's session is created with the default model. Bail before
+    // A draft's session is created with the chat model. Bail before
     // converting the draft so the composer stays put (message intact) instead
     // of stranding the user on an empty real session with no model to run.
-    if (!this.state.settings.defaultModel) {
+    if (!this.state.settings.chatModel) {
       throw new Error(
-        "No model configured. Choose a default model in Settings before starting a session.",
+        "No model configured. Choose a chat model in Settings before starting a session.",
       )
     }
     const session = await this.createSession({
       workspaceId: draft.workspaceId,
       autoTitle: true,
-      model: this.state.settings.defaultModel as { provider: string; id: string },
+      model: this.state.settings.chatModel as { provider: string; id: string },
     })
     this.state.drafts = this.state.drafts.filter((d) => d.localId !== localId)
     await this.openSession(session.id)
@@ -169,6 +169,12 @@ export class Store {
   }
   openSession(id: string): Promise<void> {
     return this.sessions.openSession(id)
+  }
+  updateSessionModel(
+    id: string,
+    model: { provider: string; id: string },
+  ): Promise<SessionInfo> {
+    return this.sessions.updateModel(id, model)
   }
 
   // ---- chat ----
@@ -237,6 +243,12 @@ export class Store {
   }
   setDefaultModel(model: { provider: string; id: string }): Promise<void> {
     return this.settings.setDefaultModel(model)
+  }
+  setChatModel(model: { provider: string; id: string } | null): Promise<void> {
+    return this.settings.setChatModel(model)
+  }
+  setTitleModel(model: { provider: string; id: string } | null): Promise<void> {
+    return this.settings.setTitleModel(model)
   }
   setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"): Promise<void> {
     return this.settings.setDefaultThinkingLevel(level)

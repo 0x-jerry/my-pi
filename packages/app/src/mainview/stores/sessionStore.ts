@@ -63,6 +63,20 @@ export class SessionStore {
     return forked
   }
 
+  /** Persist a per-session model override chosen in the chat header. */
+  async updateModel(
+    id: string,
+    model: { provider: string; id: string },
+  ): Promise<SessionInfo> {
+    const updated = await this.client.call<SessionInfo>(
+      RpcMethod.sessionsUpdateModel,
+      { id, model },
+    )
+    const idx = this.state.sessions.findIndex((s) => s.id === id)
+    if (idx !== -1) this.state.sessions[idx] = updated
+    return updated
+  }
+
   async openSession(id: string): Promise<void> {
     this.state.activeSessionId = id
     await this.loadMessages(id)

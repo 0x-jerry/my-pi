@@ -2,6 +2,7 @@ import { ModelService } from "@my-pi/agent";
 import { DEFAULT_SESSION_TITLE, type CoreEvent, type StoredMessage } from "@my-pi/shared";
 import { EventBus } from "../events/event-bus";
 import { SessionService } from "./session-service";
+import { SettingsService } from "../settings/settings-service";
 
 /** Hard cap so a model can never produce an absurdly long title. */
 const MAX_TITLE_LEN = 80;
@@ -68,6 +69,7 @@ export class TitleService {
 	constructor(
 		private bus: EventBus,
 		private sessions: SessionService,
+		private settings: SettingsService,
 		private modelService: ModelService,
 	) {}
 
@@ -90,10 +92,19 @@ export class TitleService {
 
 			const session = this.sessions.get(event.sessionId);
 			if (session.title !== DEFAULT_SESSION_TITLE) return;
-			if (!session.modelProvider || !session.modelId) return;
+
+			// Titling model: explicit titleModel, else the background-task model
+			// (settings.defaultModel), else fall back to the session's own model.
+			const titleModel =
+				this.settings.get<{ provider: string; id: string }>("titleModel") ??
+				this.settings.get<{ provider: string; id: string }>("defaultModel") ??
+				(session.modelProvider && session.modelId
+					? { provider: session.modelProvider, id: session.modelId }
+					: null);
+			if (!titleModel) return;
 			const model = this.modelService.getModel(
-				session.modelProvider,
-				session.modelId,
+				titleModel.provider,
+				titleModel.id,
 			);
 			if (!model) return;
 

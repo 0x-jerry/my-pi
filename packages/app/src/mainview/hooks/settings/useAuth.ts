@@ -2,9 +2,8 @@ import { ref } from "vue"
 import { useModelStore } from "../../stores"
 
 /**
- * Shared provider-auth behavior used by both the ModelPicker dialog and the
- * Settings auth panel: per-provider busy/error state and login/logout RPC
- * calls. Returns whether the call succeeded so callers can react (toasts,
+ * Shared provider-auth behavior used by the Settings auth panel and its Add-
+ * provider dialog: per-provider busy/error state and login/logout RPC calls. Returns whether the call succeeded so callers can react (toasts,
  * model reload), and surfaces failures via `error[providerId]`.
  */
 export function useAuth() {

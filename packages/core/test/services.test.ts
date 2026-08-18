@@ -80,8 +80,8 @@ describe("WorkspaceService", () => {
 });
 
 describe("SessionService", () => {
-	test("create resolves default model from settings", () => {
-		settings.set("defaultModel", { provider: "anthropic", id: "claude-opus" });
+	test("create resolves chat model from settings", () => {
+		settings.set("chatModel", { provider: "anthropic", id: "claude-opus" });
 		settings.set("defaultThinkingLevel", "high");
 		const ws = workspaces.create({ name: "a", path: dir });
 		const session = sessions.create({ workspaceId: ws.id });
@@ -93,13 +93,28 @@ describe("SessionService", () => {
 	});
 
 	test("explicit model overrides settings", () => {
-		settings.set("defaultModel", { provider: "anthropic", id: "claude-opus" });
+		settings.set("chatModel", { provider: "anthropic", id: "claude-opus" });
 		const ws = workspaces.create({ name: "a", path: dir });
 		const session = sessions.create({
 			workspaceId: ws.id,
 			model: { provider: "openai", id: "gpt-5" },
 		});
 		expect(session.modelId).toBe("gpt-5");
+	});
+
+	test("updateModel overrides the model for one session", () => {
+		const ws = workspaces.create({ name: "a", path: dir });
+		const session = sessions.create({
+			workspaceId: ws.id,
+			model: { provider: "openai", id: "gpt-5" },
+		});
+		const updated = sessions.updateModel(session.id, {
+			provider: "anthropic",
+			id: "claude-4",
+		});
+		expect(updated.modelProvider).toBe("anthropic");
+		expect(updated.modelId).toBe("claude-4");
+		expect(sessions.get(session.id).modelId).toBe("claude-4");
 	});
 
 	test("resumePayload returns stored transcript", () => {
@@ -304,7 +319,7 @@ describe("TitleService", () => {
 			content: [{ type: "text", text: "\"Refactor the sidebar\"" }],
 		});
 		const { bus, session } = setup();
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [
@@ -327,7 +342,7 @@ describe("TitleService", () => {
 			workspaceId: ws.id,
 			model: { provider: "anthropic", id: "claude" },
 		});
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [makeStored(1, "user", "hello")]);
@@ -340,7 +355,7 @@ describe("TitleService", () => {
 		const fake = makeFakeModelService({ content: [{ type: "text", text: "x" }] });
 		const { bus, session } = setup();
 		sessions.updateTitle(session.id, "Already named");
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [makeStored(1, "user", "hello")]);
@@ -354,7 +369,7 @@ describe("TitleService", () => {
 		const bus = new EventBus();
 		const ws = workspaces.create({ name: "a", path: dir });
 		const session = sessions.create({ workspaceId: ws.id, autoTitle: true });
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [makeStored(1, "user", "hello")]);
@@ -371,7 +386,7 @@ describe("TitleService", () => {
 			],
 		});
 		const { bus, session } = setup();
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [
@@ -390,7 +405,7 @@ describe("TitleService", () => {
 	test("a failing model call leaves the title untouched", async () => {
 		const fake = makeFakeModelService(undefined);
 		const { bus, session } = setup();
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [makeStored(1, "user", "hello")]);
@@ -406,7 +421,7 @@ describe("TitleService", () => {
 			content: [{ type: "text", text: "Generated" }],
 		});
 		const { bus, session } = setup();
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [makeStored(1, "user", "hello")]);
@@ -424,7 +439,7 @@ describe("TitleService", () => {
 			content: [{ type: "text", text: "Generated" }],
 		});
 		const { bus, session } = setup();
-		const svc = new TitleService(bus, sessions, fake.service);
+		const svc = new TitleService(bus, sessions, settings, fake.service);
 		svc.start();
 
 		emitRunEnd(bus, session.id, [makeStored(1, "user", "hello")]);

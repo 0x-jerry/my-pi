@@ -144,6 +144,7 @@ export const RpcMethod = {
 	sessionsFork: "sessions.fork",
 	sessionsMessages: "sessions.messages",
 	sessionsUsage: "sessions.usage",
+	sessionsUpdateModel: "sessions.updateModel",
 	chatSend: "chat.send",
 	chatSteer: "chat.steer",
 	chatFollowUp: "chat.followUp",

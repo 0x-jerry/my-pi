@@ -229,7 +229,7 @@ export class CoreApp {
 			usage: usageRepo,
 			sessions: sessionsRepo,
 		});
-		const titleService = new TitleService(bus, sessions, modelService);
+		const titleService = new TitleService(bus, sessions, settings, modelService);
 		const rpc = new JsonRpcServer({
 			host: options.wsHost,
 			port: options.wsPort,
@@ -286,6 +286,19 @@ export class CoreApp {
 	async deleteSession(id: string): Promise<void> {
 		await this.pool.stop(id);
 		this.sessions.remove(id);
+	}
+
+	updateSessionModel(
+		id: string,
+		model: { provider: string; id: string },
+	): SessionInfo {
+		// Reject an override up front (instead of persisting a model that can't
+		// run) so the UI gets immediate feedback rather than failing at send time.
+		const resolved = this.modelService.getModel(model.provider, model.id);
+		if (!resolved) {
+			throw new Error(`Unknown model: ${model.provider}/${model.id}`);
+		}
+		return this.sessions.updateModel(id, model);
 	}
 
 	forkSession(id: string, uptoSeq?: number): SessionInfo {

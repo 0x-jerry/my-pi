@@ -87,6 +87,14 @@ function fakeStore(overrides: Partial<FakeStoreState> = {}) {
       state: sessionsState,
       forkSession: vi.fn(async () => ({ id: "fork1" })),
       openSession: vi.fn(async () => {}),
+      updateModel: vi.fn(async () => ({})),
+    },
+    models: {
+      state: reactive({ providers: [], models: {} }),
+      listModels: vi.fn(async () => []),
+      loadProviders: vi.fn(async () => {}),
+      loginApiKey: vi.fn(async () => {}),
+      logout: vi.fn(async () => {}),
     },
     chat: {
       state: chatState,

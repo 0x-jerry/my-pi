@@ -107,7 +107,9 @@ describe("Store", () => {
       [RpcMethod.settingsGet]: (p: { key: string }) =>
         p.key === "defaultModel"
           ? { provider: "anthropic", id: "claude" }
-          : "high",
+          : p.key === "defaultThinkingLevel"
+            ? "high"
+            : undefined,
     })
     client.onRefreshAll?.()
     await flush()
@@ -384,11 +386,18 @@ describe("Store", () => {
       [RpcMethod.settingsSet]: () => undefined,
     })
     await store.setDefaultModel({ provider: "anthropic", id: "claude" })
+    await store.setChatModel({ provider: "openai", id: "gpt-5" })
+    await store.setTitleModel(null)
     await store.setDefaultThinkingLevel("high")
     expect(store.state.settings.defaultModel).toEqual({
       provider: "anthropic",
       id: "claude",
     })
+    expect(store.state.settings.chatModel).toEqual({
+      provider: "openai",
+      id: "gpt-5",
+    })
+    expect(store.state.settings.titleModel).toBeUndefined()
     expect(store.state.settings.defaultThinkingLevel).toBe("high")
     expect(client.calls.every((c) => c.method === RpcMethod.settingsSet)).toBe(true)
   })
@@ -513,7 +522,7 @@ describe("Store", () => {
       [RpcMethod.chatSend]: () => undefined,
     })
     store.state.activeWorkspaceId = "w1"
-    store.state.settings.defaultModel = { provider: "anthropic", id: "claude" }
+    store.state.settings.chatModel = { provider: "anthropic", id: "claude" }
     const id = store.startDraft("w1")
     store.openDraft(id)
 
@@ -532,7 +541,7 @@ describe("Store", () => {
     expect(client.calls.some((c) => c.method === RpcMethod.sessionsList)).toBe(true)
   })
 
-  test("sendDraft keeps the draft when no default model is configured", async () => {
+  test("sendDraft keeps the draft when no chat model is configured", async () => {
     const { client, store } = setup({
       [RpcMethod.sessionsCreate]: () => {
         throw new Error("should not be called")
@@ -556,7 +565,7 @@ describe("Store", () => {
         throw new Error("boom")
       },
     })
-    store.state.settings.defaultModel = { provider: "anthropic", id: "claude" }
+    store.state.settings.chatModel = { provider: "anthropic", id: "claude" }
     const id = store.startDraft("w1")
     store.openDraft(id)
 
