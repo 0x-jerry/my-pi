@@ -1,0 +1,138 @@
+/*!
+ * Prose styling for Comark-rendered chat markdown.
+ *
+ * Comark's <Markdown>/<MarkdownDocument> render a `.comark-content` wrapper div
+ * with native HTML elements inside. Because that subtree is produced by Comark's
+ * own renderer (not our template), scoped styles can't reach it — so these rules
+ * are global and keyed off the `.comark-content` root. They apply only inside
+ * markdown blocks, leaving the rest of the app untouched.
+ */
+.comark-content {
+  min-width: 0;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.comark-content > :first-child {
+  margin-top: 0;
+}
+.comark-content > :last-child {
+  margin-bottom: 0;
+}
+
+.comark-content p {
+  margin: 0.5em 0;
+}
+.comark-content h1,
+.comark-content h2,
+.comark-content h3,
+.comark-content h4,
+.comark-content h5,
+.comark-content h6 {
+  margin: 1em 0 0.5em;
+  line-height: 1.3;
+  color: var(--fg);
+  font-weight: 600;
+}
+.comark-content h1 { font-size: 1.5em; }
+.comark-content h2 { font-size: 1.3em; }
+.comark-content h3 { font-size: 1.15em; }
+.comark-content h4 { font-size: 1em; }
+
+.comark-content ul,
+.comark-content ol {
+  margin: 0.5em 0;
+  padding-left: 1.6em;
+}
+.comark-content li {
+  margin: 0.2em 0;
+}
+.comark-content li > ul,
+.comark-content li > ol {
+  margin: 0.1em 0;
+}
+
+.comark-content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.comark-content a:hover {
+  text-decoration: underline;
+}
+
+.comark-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.comark-content pre {
+  margin: 0.5em 0;
+  padding: 10px 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.comark-content pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+
+.comark-content blockquote {
+  margin: 0.5em 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--fg-dim);
+}
+
+.comark-content table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.comark-content th,
+.comark-content td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+.comark-content th {
+  font-weight: 600;
+}
+
+.comark-content img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.comark-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+
+/* KaTeX — give display equations breathing room in chat */
+.comark-content .katex-display {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
+/* Mermaid diagrams — center and frame them */
+.comark-content .mermaid {
+  margin: 0.75em 0;
+  padding: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.comark-content .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}

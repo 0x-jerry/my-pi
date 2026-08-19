@@ -1,7 +1,9 @@
 // Element Plus light theme first, then app overrides (app.css wins on :root vars).
 import 'normalize.css'
 import "element-plus/dist/index.css"
+import "katex/dist/katex.min.css"
 import "./app.css"
+import "./components/chat/markdown.css"
 import { createApp } from "vue"
 import ElementPlus from "element-plus"
 import App from "./App.vue"

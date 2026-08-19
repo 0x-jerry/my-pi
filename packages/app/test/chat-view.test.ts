@@ -1,6 +1,6 @@
 import { reactive } from "vue"
 import { describe, expect, test, vi } from "vitest"
-import { mount } from "@vue/test-utils"
+import { flushPromises, mount } from "@vue/test-utils"
 import ElementPlus from "element-plus"
 import ChatView from "../src/mainview/components/ChatView.vue"
 import { StoreKey } from "../src/mainview/store"
@@ -116,18 +116,22 @@ function fakeStore(overrides: Partial<FakeStoreState> = {}) {
   return store
 }
 
-function mountChat(store: ReturnType<typeof fakeStore>) {
-  return mount(ChatView, {
+async function mountChat(store: ReturnType<typeof fakeStore>) {
+  const wrapper = mount(ChatView, {
     props: { sessionId: "s1" },
     global: {
       plugins: [ElementPlus],
       provide: { [StoreKey]: store },
     },
   })
+  // MarkdownContent renders inside an async <Suspense> boundary; flush so
+  // markdown-rendered text is present before assertions (was a timing flake).
+  await flushPromises()
+  return wrapper
 }
 
 describe("ChatView", () => {
-  test("renders persisted messages: text, thinking, toolCall, toolResult, image", () => {
+  test("renders persisted messages: text, thinking, toolCall, toolResult, image", async () => {
     const store = fakeStore()
     store.sessions.state.messagesBySession.s1 = [
       message({
@@ -158,7 +162,7 @@ describe("ChatView", () => {
         },
       }),
     ]
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
 
     expect(wrapper.text()).toContain("what is 2+2?")
     expect(wrapper.text()).toContain("let me think")
@@ -168,7 +172,7 @@ describe("ChatView", () => {
     expect(wrapper.text()).toContain('"cmd"')
   })
 
-  test("renders images as data URIs", () => {
+  test("renders images as data URIs", async () => {
     const store = fakeStore()
     store.sessions.state.messagesBySession.s1 = [
       message({
@@ -180,7 +184,7 @@ describe("ChatView", () => {
         },
       }),
     ]
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     const img = wrapper.find("img.image")
     expect(img.exists()).toBe(true)
     expect(img.attributes("src")).toBe("data:image/png;base64,iVBORw0=")
@@ -196,7 +200,7 @@ describe("ChatView", () => {
       activeTool: { toolName: "bash", args: { cmd: "ls" } },
       pendingSend: "my question",
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
 
     expect(wrapper.text()).toContain("my question")
     expect(wrapper.text()).toContain("streaming…")
@@ -216,14 +220,14 @@ describe("ChatView", () => {
       activeTool: null,
       pendingSend: null,
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     await wrapper.find("button.abort-btn").trigger("click")
     expect(store.chat.abort).toHaveBeenCalledWith("s1")
   })
 
   test("enter sends via store.sendMessage and clears the input", async () => {
     const store = fakeStore()
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     const textarea = wrapper.find("textarea")
     await textarea.setValue("hello pi")
     await textarea.trigger("keydown.enter")
@@ -242,7 +246,7 @@ describe("ChatView", () => {
       activeTool: null,
       pendingSend: null,
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     const textarea = wrapper.find("textarea")
     await textarea.setValue("redirect")
     await textarea.trigger("keydown.enter")
@@ -252,7 +256,7 @@ describe("ChatView", () => {
     expect((textarea.element as HTMLTextAreaElement).value).toBe("")
   })
 
-  test("renders provider/model and token usage below the message with an icon fork button", () => {
+  test("renders provider/model and token usage below the message with an icon fork button", async () => {
     const store = fakeStore()
     store.sessions.state.messagesBySession.s1 = [
       message({
@@ -274,14 +278,14 @@ describe("ChatView", () => {
         },
       }),
     ]
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     expect(wrapper.text()).toContain("anthropic / claude")
     expect(wrapper.text()).toContain("35 tok")
     expect(wrapper.text()).toContain("$0.0012")
     expect(wrapper.find("button.fork-here").exists()).toBe(true)
   })
 
-  test("shows last-run usage in the footer", () => {
+  test("shows last-run usage in the footer", async () => {
     const store = fakeStore()
     store.chat.state.lastUsage.s1 = {
       input: 10,
@@ -290,12 +294,12 @@ describe("ChatView", () => {
       cacheWrite: 0,
       cost: 0.0012,
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     expect(wrapper.text()).toContain("last run")
     expect(wrapper.text()).toContain("$0.0012")
   })
 
-  test("surfaces the streaming error banner", () => {
+  test("surfaces the streaming error banner", async () => {
     const store = fakeStore()
     store.chat.state.streaming.s1 = {
       status: "error",
@@ -306,17 +310,17 @@ describe("ChatView", () => {
       activeTool: null,
       pendingSend: null,
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     expect(wrapper.text()).toContain("model unavailable")
   })
 
-  test("shows the empty hint when there are no messages", () => {
+  test("shows the empty hint when there are no messages", async () => {
     const store = fakeStore()
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     expect(wrapper.text()).toContain("Send a message to start")
   })
 
-  test("empty hint is hidden during thinking-only streaming", () => {
+  test("empty hint is hidden during thinking-only streaming", async () => {
     const store = fakeStore()
     store.chat.state.streaming.s1 = {
       status: "running",
@@ -326,12 +330,12 @@ describe("ChatView", () => {
       activeTool: null,
       pendingSend: null,
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     expect(wrapper.text()).not.toContain("Send a message to start")
     expect(wrapper.text()).toContain("thinking…")
   })
 
-  test("renders completed streamed parts frozen at tool boundaries", () => {
+  test("renders completed streamed parts frozen at tool boundaries", async () => {
     const store = fakeStore()
     store.chat.state.streaming.s1 = {
       status: "running",
@@ -341,13 +345,13 @@ describe("ChatView", () => {
       activeTool: null,
       pendingSend: null,
     }
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     expect(wrapper.text()).toContain("first part")
     expect(wrapper.text()).toContain("thought")
     expect(wrapper.text()).toContain("second part…")
   })
 
-  test("renders tool-result images as data URIs", () => {
+  test("renders tool-result images as data URIs", async () => {
     const store = fakeStore()
     store.sessions.state.messagesBySession.s1 = [
       message({
@@ -361,7 +365,7 @@ describe("ChatView", () => {
         },
       }),
     ]
-    const wrapper = mountChat(store)
+    const wrapper = await mountChat(store)
     const img = wrapper.find("img.image")
     expect(img.exists()).toBe(true)
     expect(img.attributes("src")).toBe("data:image/png;base64,aGVsbG8=")
